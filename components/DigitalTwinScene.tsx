@@ -11,31 +11,28 @@ interface DigitalTwinSceneProps {
 
 // Internal scene component that runs within the Canvas provider
 function HologramScene({ currentCondition }: DigitalTwinSceneProps) {
-  // Mesh and Material Refs
+  // Mesh Refs
   const brainMeshRef = useRef<THREE.Mesh>(null)
   const leftLungMeshRef = useRef<THREE.Mesh>(null)
   const rightLungMeshRef = useRef<THREE.Mesh>(null)
   const heartMeshRef = useRef<THREE.Mesh>(null)
   const spineMeshRef = useRef<THREE.LineSegments>(null)
 
-  const brainMatRef = useRef<THREE.MeshStandardMaterial>(null)
-  const lungMatRef = useRef<THREE.MeshStandardMaterial>(null)
-  const heartMatRef = useRef<THREE.MeshStandardMaterial>(null)
+  // Material Refs (switching to Basic Materials to avoid white blowout from standard lighting)
+  const brainMatRef = useRef<THREE.MeshBasicMaterial>(null)
+  const leftLungMatRef = useRef<THREE.MeshBasicMaterial>(null)
+  const rightLungMatRef = useRef<THREE.MeshBasicMaterial>(null)
+  const heartMatRef = useRef<THREE.MeshBasicMaterial>(null)
   const spineMatRef = useRef<THREE.LineBasicMaterial>(null)
 
   useFrame((state) => {
     const elapsed = state.clock.elapsedTime
 
-    // 1. Determine target opacities, emissive intensities, and colors based on active condition
+    // 1. Determine target opacities and colors based on active condition
     let targetBrainOpacity = 0.15
     let targetLungOpacity = 0.15
     let targetHeartOpacity = 0.15
     let targetSpineOpacity = 0.15
-
-    let targetBrainEmissive = 0.3
-    let targetLungEmissive = 0.3
-    let targetHeartEmissive = 0.3
-    let targetSpineEmissive = 0.3
 
     let brainColor = new THREE.Color('#c040ff') // Purple for epilepsy
     let lungColor = new THREE.Color('#00ccff')  // Cyan for asthma
@@ -43,57 +40,45 @@ function HologramScene({ currentCondition }: DigitalTwinSceneProps) {
     const defaultSpineColor = new THREE.Color('#00ffaa') // Green for general
 
     if (currentCondition === 'general') {
-      // General mode - all organs visible and nominal
+      // General mode - all organs visible and nominal (green accents)
       targetBrainOpacity = 0.7
       targetLungOpacity = 0.7
       targetHeartOpacity = 0.7
       targetSpineOpacity = 0.7
-
-      targetBrainEmissive = 1.0
-      targetLungEmissive = 1.0
-      targetHeartEmissive = 1.0
-      targetSpineEmissive = 1.0
 
       brainColor = new THREE.Color('#00ffaa')
       lungColor = new THREE.Color('#00ffaa')
       heartColor = new THREE.Color('#00ffaa')
     } else if (currentCondition === 'epilepsy') {
       targetBrainOpacity = 0.95
-      targetBrainEmissive = 2.0
       targetSpineOpacity = 0.5
-      targetSpineEmissive = 0.8
     } else if (currentCondition === 'asthma') {
       targetLungOpacity = 0.95
-      targetLungEmissive = 2.0
       targetSpineOpacity = 0.5
-      targetSpineEmissive = 0.8
     } else if (currentCondition === 'arrhythmia') {
       targetHeartOpacity = 0.95
-      targetHeartEmissive = 2.0
       targetSpineOpacity = 0.5
-      targetSpineEmissive = 0.8
     }
 
-    // 2. Smoothly Lerp materials (transparency, intensity, colors)
+    // 2. Smoothly Lerp materials (transparency, colors)
     if (brainMatRef.current) {
       brainMatRef.current.opacity = THREE.MathUtils.lerp(brainMatRef.current.opacity, targetBrainOpacity, 0.08)
-      brainMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(brainMatRef.current.emissiveIntensity, targetBrainEmissive, 0.08)
       brainMatRef.current.color.lerp(brainColor, 0.08)
-      brainMatRef.current.emissive.lerp(brainColor, 0.08)
     }
 
-    if (lungMatRef.current) {
-      lungMatRef.current.opacity = THREE.MathUtils.lerp(lungMatRef.current.opacity, targetLungOpacity, 0.08)
-      lungMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(lungMatRef.current.emissiveIntensity, targetLungEmissive, 0.08)
-      lungMatRef.current.color.lerp(lungColor, 0.08)
-      lungMatRef.current.emissive.lerp(lungColor, 0.08)
+    if (leftLungMatRef.current) {
+      leftLungMatRef.current.opacity = THREE.MathUtils.lerp(leftLungMatRef.current.opacity, targetLungOpacity, 0.08)
+      leftLungMatRef.current.color.lerp(lungColor, 0.08)
+    }
+
+    if (rightLungMatRef.current) {
+      rightLungMatRef.current.opacity = THREE.MathUtils.lerp(rightLungMatRef.current.opacity, targetLungOpacity, 0.08)
+      rightLungMatRef.current.color.lerp(lungColor, 0.08)
     }
 
     if (heartMatRef.current) {
       heartMatRef.current.opacity = THREE.MathUtils.lerp(heartMatRef.current.opacity, targetHeartOpacity, 0.08)
-      heartMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(heartMatRef.current.emissiveIntensity, targetHeartEmissive, 0.08)
       heartMatRef.current.color.lerp(heartColor, 0.08)
-      heartMatRef.current.emissive.lerp(heartColor, 0.08)
     }
 
     if (spineMatRef.current) {
@@ -171,14 +156,12 @@ function HologramScene({ currentCondition }: DigitalTwinSceneProps) {
       {/* 1. BRAIN Wireframe Model */}
       <mesh ref={brainMeshRef} position={[0, 1.4, 0]}>
         <icosahedronGeometry args={[0.5, 2]} />
-        <meshStandardMaterial
+        <meshBasicMaterial
           ref={brainMatRef}
           wireframe
           transparent
           opacity={0.7}
           color="#00ffaa"
-          emissive="#00ffaa"
-          emissiveIntensity={1.0}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
@@ -186,28 +169,24 @@ function HologramScene({ currentCondition }: DigitalTwinSceneProps) {
       {/* 2. LUNGS (Symmetrical Left & Right Lobe meshes) */}
       <mesh ref={leftLungMeshRef} position={[-0.48, 0.2, 0]}>
         <cylinderGeometry args={[0.22, 0.15, 0.9, 12, 4]} />
-        <meshStandardMaterial
-          ref={lungMatRef}
+        <meshBasicMaterial
+          ref={leftLungMatRef}
           wireframe
           transparent
           opacity={0.7}
           color="#00ffaa"
-          emissive="#00ffaa"
-          emissiveIntensity={1.0}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
 
       <mesh ref={rightLungMeshRef} position={[0.48, 0.2, 0]}>
         <cylinderGeometry args={[0.22, 0.15, 0.9, 12, 4]} />
-        <meshStandardMaterial
-          ref={lungMatRef} // share material parameters
+        <meshBasicMaterial
+          ref={rightLungMatRef}
           wireframe
           transparent
           opacity={0.7}
           color="#00ffaa"
-          emissive="#00ffaa"
-          emissiveIntensity={1.0}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
@@ -215,14 +194,12 @@ function HologramScene({ currentCondition }: DigitalTwinSceneProps) {
       {/* 3. HEART Wireframe Model (Centered and slightly tilted) */}
       <mesh ref={heartMeshRef} position={[-0.14, 0.15, 0.12]} rotation={[0.2, 0, 0.25]}>
         <octahedronGeometry args={[0.26, 2]} />
-        <meshStandardMaterial
+        <meshBasicMaterial
           ref={heartMatRef}
           wireframe
           transparent
           opacity={0.7}
           color="#00ffaa"
-          emissive="#00ffaa"
-          emissiveIntensity={1.0}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
@@ -258,11 +235,7 @@ export default function DigitalTwinScene({ currentCondition }: DigitalTwinSceneP
         gl={{ antialias: true, alpha: true }}
         style={{ background: 'transparent' }}
       >
-        <ambientLight intensity={0.25} />
-        
-        {/* Neon spotlights reflecting off wireframes */}
-        <pointLight position={[2, 3, 4]} intensity={2.0} color="#00ffaa" />
-        <pointLight position={[-3, -2, -3]} intensity={1.5} color="#00ccff" />
+        <ambientLight intensity={0.5} />
         
         <HologramScene currentCondition={currentCondition} />
         
