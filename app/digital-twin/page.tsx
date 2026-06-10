@@ -927,7 +927,7 @@ export default function DigitalTwin() {
       
       {/* Top Banner Header */}
       <header className="h-16 border-b border-white/5 bg-[#050807]/90 backdrop-blur-md px-6 flex items-center justify-between z-10">
-        <div className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-3 hover:opacity-85 transition-opacity cursor-pointer">
           <div className="w-8 h-8 rounded border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center animate-pulse">
             <Cpu className="w-4 h-4 text-emerald-400" />
           </div>
@@ -939,7 +939,7 @@ export default function DigitalTwin() {
               SYNAPSE NEURAL TELEMETRY LINK v4.0.1
             </p>
           </div>
-        </div>
+        </Link>
 
         {/* Global States */}
         <div className="hidden md:flex items-center gap-6 font-mono text-[10px]">
@@ -981,11 +981,12 @@ export default function DigitalTwin() {
           </button>
 
           {/* Navigation link */}
-          <Link href="/" className="inline-flex">
-            <span className="flex items-center gap-2 px-3 py-1.5 rounded border border-white/5 hover:border-emerald-500/30 hover:bg-emerald-500/10 text-xs text-slate-400 hover:text-emerald-400 font-mono transition-all duration-200 cursor-pointer">
-              <ArrowLeft className="w-3.5 h-3.5" />
-              TELEMETRY HUD
-            </span>
+          <Link 
+            href="/" 
+            className="flex items-center gap-2 px-3 py-1.5 rounded border border-emerald-500/20 hover:border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 text-xs text-emerald-400 hover:text-emerald-300 font-mono transition-all duration-200 cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.05)]"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            TELEMETRY HUD
           </Link>
         </div>
       </header>
