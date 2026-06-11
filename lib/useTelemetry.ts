@@ -117,6 +117,12 @@ export function useTelemetry() {
     setSamples([]);
   }, []);
 
+  const executeSubsystem = useCallback((cmd: string) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'EXECUTE_SUBSYSTEM', cmd }));
+    }
+  }, []);
+
   return {
     samples,
     isCrisis,
@@ -125,6 +131,7 @@ export function useTelemetry() {
     togglePause,
     triggerCrisisMode,
     resolveCrisisMode,
-    setTrack
+    setTrack,
+    executeSubsystem
   };
 }

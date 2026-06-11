@@ -1,91 +1,192 @@
-# 🌐 S.P.H.E.R.E.
-### Sentinel Physiological Hazard Evaluation & Response Engine
+<p align="center">
+  <img src="https://img.shields.io/badge/S.P.H.E.R.E.-Autonomous_Telemetry-00d4ff?style=for-the-badge&labelColor=080c10" alt="S.P.H.E.R.E." />
+</p>
 
-[![Tech Stack](https://img.shields.io/badge/Tech_Stack-Next.js_|_WebSockets_|_Node.js-00d4ff?style=flat-square)](#)
+<h1 align="center">🛡️ S.P.H.E.R.E.</h1>
+<h3 align="center">Sentinel Physiological Hazard Evaluation & Response Engine</h3>
+
+<p align="center">
+  <em>An autonomous, real-time biometric telemetry cockpit for monitoring and protecting high-risk operators across five safety-critical domains.</em>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js" alt="Next.js" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/Three.js-WebGL-000000?style=flat-square&logo=three.js" alt="Three.js" />
+  <img src="https://img.shields.io/badge/WebSockets-Real--Time-010101?style=flat-square&logo=socket.io" alt="WebSockets" />
+  <img src="https://img.shields.io/badge/Zustand-State-443b30?style=flat-square" alt="Zustand" />
+  <img src="https://img.shields.io/badge/Framer_Motion-Animations-0055FF?style=flat-square&logo=framer" alt="Framer Motion" />
+</p>
 
 ---
 
-## 🎯 Overview
-**S.P.H.E.R.E.** is an autonomous, multi-sector biometric guardian and hazard intervention cockpit designed for high-risk, safety-critical environments. By analyzing real-time physiological telemetry, the system calculates multi-dimensional fatigue and risk indices, detects predictive anomalies before threshold breaches occur, and executes automated failsafe protocols when operators enter high-stress or compromised states.
+## 📖 Overview
+
+**S.P.H.E.R.E.** is an autonomous, multi-sector biometric guardian and hazard-intervention cockpit. It monitors real-time physiological telemetry from high-risk operators, computes multi-dimensional fatigue and risk indices, predicts anomalies before threshold breaches occur, and executes automated failsafe protocols when operators enter compromised states.
+
+The system features a **3D Digital Twin** — a fully interactive WebGL hologram of the human body with beating heart, breathing lungs, and synaptic brain particles — all driven by live telemetry data.
 
 ---
 
 ## 🚀 Key Features
 
-### 1. 5 Specialized Operational Profiles
-S.P.H.E.R.E. supports five distinct high-stress operator roles, each configured with specific bio-telemetry sensors, real-time algorithms, and custom automated override actions:
-*   **🚄 Train Pilot:** Monitor fatigue using **PERCLOS** (Percentage of Eye Closure) and throttle micro-correction frequency. Uses a fatigue index calculation to trigger pneumatic braking.
-*   **🛩️ Commercial Aviator / Fighter Pilot:** Target Hypoxia & G-LOC prevention with SpO₂ levels, G-force loads, and Pulse Wave Transit Time (PWTT). Automatically triggers Auto-GCAS (wings-level pull-up).
-*   **👩‍🚀 Astronaut:** EVA Space Environment Overwatch tracking chest impedance, respiration volume, carbon dioxide accumulation, and suit pressure. Deploys auxiliary oxygen and calculates emergency return-to-airlock vectors.
-*   **🥼 Microsurgeon:** Monitor hand tremor amplitude and electrodermal conductance (stress) during ultra-fine surgical tasks. Employs robotic scalpel stabilizer filtering and tool locking.
-*   **🚚 Long-Haul Logistics Trucker:** Protect against highway monotony by measuring Heart Rate Variability (HRV LF/HF) and steering grip balance. Initiates platoon spacing adjustments and shoulder parking maneuvers.
+### 🎯 Five Specialized Operator Profiles
 
-### 2. Predictive Anomaly Detection (Rolling Z-Score)
-Rather than relying purely on reactive threshold breaches, S.P.H.E.R.E. monitors telemetry deviations using a dynamic **Rolling Z-Score** calculation (computed over a 30-sample sliding window). When a metric's value drifts beyond 2.0 standard deviations from its moving average:
-*   A pulsing amber border glows around the target metric card.
-*   A glowing `⚠ ANOMALY PREDICTED` badge warns the operator of impending drift before warning/critical limits are crossed.
+Each profile is configured with domain-specific bio-sensors, real-time risk equations, and automated crisis interventions:
 
-### 3. Interactive ECG Waveform Canvas
-An animated vector-based Electrocardiogram (ECG) live scanner renders real-time cardiac waveforms directly inside the cockpit. The wave's frequency, amplitude, and noise level respond dynamically to operator stress levels, heart rate, and current status.
+| Profile | Domain | Key Sensors | Crisis Protocol |
+|---------|--------|-------------|-----------------|
+| 🚄 **Train Pilot** | Railway Operations | PERCLOS eye-tracking, throttle capacitance, micro-correction frequency | Emergency pneumatic braking |
+| ✈️ **Aviator** | Flight Deck | SpO₂ oximetry, G-force, Pulse Wave Transit Time (PWTT) | Auto-GCAS emergency descent |
+| 👩‍🚀 **Astronaut** | EVA Space Ops | Transthoracic impedance, pCO₂, suit pressure | Emergency suit re-pressurization |
+| 🔬 **Microsurgeon** | Tele-Robotic Surgery | Hand tremor FFT, electrodermal activity (EDA) | Robotic stabilizer & tool lock |
+| 🚚 **Trucker** | Long-Haul Logistics | HRV LF/HF ratio, grip asymmetry, V2V mesh quality | Platoon shoulder pull-over |
 
-### 4. Interactive Command Controls & Audio Feedback
-*   **Active Controls Panel:** Directly trigger emergency overrides or resolve systems back to nominal status.
-*   **Acoustic Feedback:** Custom audio alerts and victory chimes played through HTML5 Web Audio Synthesis, fully responsive to the operator's current physiological safety zones.
-*   **Keyboard Shortcuts & Cheat Sheet:**
-    *   `1` to `5` - Switch instantly between operator profiles.
-    *   `C` - Trigger crisis/override state.
-    *   `R` - Resolve crisis and return to nominal.
-    *   `A` - Toggle audio alarms/alerts.
-    *   `Space` - Pause or resume the real-time telemetry stream.
-    *   `?` - Show/hide the interactive keyboard shortcuts cheat sheet.
+### 🧬 3D Digital Twin (WebGL Hologram)
 
-### 5. 60-Second Guided Demo Mode
-An integrated diagnostic simulation that steps through a full lifecycle of operational scenarios:
-*   **0–10s: Nominal Baseline** – All metrics green and stable under the `PILOT` profile.
-*   **10–20s: Anomaly Drift** – Heart rate and PERCLOS begin to drift; Z-score prediction badges trigger and glow amber.
-*   **20–30s: Crisis Override** – System automatically transitions to Crisis/Override status, activating visual warning overlays, sound alerts, and critical flags.
-*   **30–40s: Autopilot Descent** – Automated override sequence executes failsafe operations (e.g., automated aircraft descent).
-*   **40–50s: Gradual Recovery** – Operator metrics slowly return to nominal safety limits.
-*   **50–60s: Post-Crisis Resolution** – Victory chime plays, a centered `ALL SYSTEMS NOMINAL` banner overlays the HUD, and telemetry returns to baseline.
+A fully interactive Three.js anatomical model embedded directly into the dashboard:
 
-### 6. HUD Screen Capture (High-Fidelity PNG Export)
-Download a vector-sharp screenshot of the cockpit using `html2canvas-pro`. The export automatically isolates the telemetry dashboard state (removing browser scrollbars and CRT scanning grid overlays to ensure clinical legibility) and saves it as `SPHERE_HUD_EXPORT_<timestamp>.png`.
+- **Beating Heart** — Procedurally generated cardioid mesh with ventricle contraction shaders synchronized to live BPM
+- **Breathing Lungs** — Vertex shader-driven diaphragm expansion responding to SpO₂ levels
+- **Synaptic Brain** — 80-particle neural firing simulation with frequency-driven jitter
+- **Vascular System** — Instanced blood-flow orbs traveling along CatmullRom spline arteries at BPM-scaled velocity
+- **Glass Skin & Skeleton** — Clearcoat physical material mannequin with 12-segment vertebral column and ribcage
+
+The miniature 3D hologram auto-rotates on the main dashboard. Click **"Proceed to 3D Digital Twin"** for a full-screen interactive experience with organ zoom, wireframe modes, and floating HUD telemetry cards.
+
+### 📊 Predictive Anomaly Detection
+
+Rather than purely reactive threshold alerts, S.P.H.E.R.E. uses a **Rolling Z-Score** algorithm computed over a 30-sample sliding window. When a metric drifts beyond **2.0 standard deviations** from its moving average:
+
+- A pulsing amber glow wraps around the target metric card
+- A `⚠ ANOMALY PREDICTED` badge warns the operator **before** warning/critical limits are crossed
+
+### 💓 Real-Time ECG Waveform
+
+A vector-based Electrocardiogram live scanner renders full **P-QRS-T** cardiac complexes at 60fps. The waveform's frequency, amplitude, and noise respond dynamically to operator stress, heart rate, and crisis state.
+
+### 🎮 Interactive Controls & Audio
+
+| Shortcut | Action |
+|----------|--------|
+| `1` – `5` | Switch between operator profiles instantly |
+| `C` | Trigger crisis / override state |
+| `R` | Resolve crisis, return to nominal |
+| `A` | Toggle audio alarms & alerts |
+| `Space` | Pause / resume telemetry stream |
+| `?` | Show keyboard shortcuts overlay |
+
+Audio feedback is synthesized programmatically through the **Web Audio API** — no external media files. Alarm frequencies and victory chimes are generated in real-time.
+
+### 🎬 60-Second Guided Demo Mode
+
+A fully automated diagnostic simulation that steps through a complete operational lifecycle:
+
+| Time | Phase | What Happens |
+|------|-------|-------------|
+| 0–10s | **Nominal Baseline** | All metrics green and stable under PILOT profile |
+| 10–20s | **Anomaly Drift** | Heart rate and PERCLOS begin drifting; Z-score badges trigger amber |
+| 20–30s | **Crisis Override** | System transitions to crisis state with alarms and visual overlays |
+| 30–40s | **Automated Failsafe** | Override sequence executes (e.g., automated aircraft descent) |
+| 40–50s | **Gradual Recovery** | Metrics slowly return to nominal safety limits |
+| 50–60s | **Resolution** | Victory chime, `ALL SYSTEMS NOMINAL` banner, telemetry returns to baseline |
+
+### 📸 HUD Screen Capture
+
+Export a high-fidelity PNG screenshot of the cockpit state using `html2canvas-pro`. The export automatically isolates the telemetry dashboard and saves it as `SPHERE_HUD_EXPORT_<timestamp>.png`.
 
 ---
 
-## 🛠️ Architecture & Tech Stack
-*   **Frontend Dashboard:** Next.js (React), Tailwind CSS, Framer Motion
-*   **Visual Analytics:** Recharts (Polar Radar & SVG Trend lines) & Canvas API (ECG rendering)
-*   **Telemetry Engine:** WebSocket server (Node.js) transmitting real-time simulation packets
-*   **Synthesis Engine:** Web Audio API (Synthesizes raw alarm frequencies and audio chimes programmatically without external media assets)
+## 🏗️ Architecture
+
+```
+S.P.H.E.R.E./
+├── app/
+│   ├── page.tsx                  # Main telemetry dashboard (3,000+ lines)
+│   ├── digital-twin/page.tsx     # Full-screen 3D Digital Twin experience
+│   ├── globals.css               # Design system (glassmorphism, CRT, animations)
+│   └── layout.tsx                # Root layout with Google Fonts
+├── components/
+│   ├── DigitalTwinScene.tsx       # Three.js WebGL hologram (organs, skeleton, particles)
+│   └── BioWaveCanvas.tsx          # Canvas-based biological waveform renderer
+├── lib/
+│   ├── useTelemetry.ts            # WebSocket hook for real-time data consumption
+│   └── useTelemetryStore.ts       # Zustand store with auto-reconnect & atomic selectors
+├── server.js                      # Node.js WebSocket telemetry simulation engine
+└── public/                        # Static assets
+```
+
+### Tech Stack
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Frontend** | Next.js 16, React 19 | App framework & rendering |
+| **Styling** | Tailwind CSS 4, Framer Motion | Design system & animations |
+| **3D Engine** | Three.js, React Three Fiber, Drei | WebGL Digital Twin hologram |
+| **Charts** | Recharts | Polar radar, area charts, trend lines |
+| **Waveforms** | Canvas API | 60fps ECG rendering |
+| **State** | Zustand | Global telemetry store with atomic selectors |
+| **Real-Time** | WebSockets (ws) | Bidirectional telemetry streaming |
+| **Audio** | Web Audio API | Programmatic alarm synthesis |
+| **Server** | Node.js, Express | Telemetry simulation & WebSocket engine |
+| **Export** | html2canvas-pro | High-fidelity screenshot capture |
 
 ---
 
-## ⚙️ Installation & Running Locally
+## ⚙️ Getting Started
 
 ### Prerequisites
-*   **Node.js** (v18.0.0 or higher)
-*   **npm** (v9.0.0 or higher)
 
-### 1. Clone & Extract
-Ensure you are in the project root directory.
+- **Node.js** v18.0.0 or higher
+- **npm** v9.0.0 or higher
 
-### 2. Install Dependencies
-Install client and server packages:
+### Installation
+
 ```bash
+# 1. Clone the repository
+git clone https://github.com/FrozenLionMax/S.P.H.E.R.E..git
+cd S.P.H.E.R.E.
+
+# 2. Install dependencies
 npm install
-```
 
-### 3. Start the WebSockets Telemetry Server
-Launch the background telemetry simulation server:
-```bash
+# 3. Start the WebSocket telemetry server (runs on port 8080)
 node server.js
-```
-The server will start listening on port `8080` and emit periodic mock biosensors data.
 
-### 4. Start the Frontend Dashboard
-Run the Next.js development server:
-```bash
+# 4. In a new terminal, start the Next.js dashboard
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) in your web browser to access the S.P.H.E.R.E. interface.
+
+Open **[http://localhost:3000](http://localhost:3000)** to access S.P.H.E.R.E.
+
+### Quick Start
+
+1. **Select an operator** from the onboarding screen (Train Pilot, Aviator, Astronaut, Surgeon, or Trucker)
+2. **Watch live telemetry** flow across metric cards, charts, and the 3D hologram
+3. **Press `C`** to trigger a crisis and see the automated override system engage
+4. **Press `R`** to resolve and watch graceful recovery
+5. **Click "Proceed to 3D Digital Twin"** to explore the full-screen interactive hologram
+
+---
+
+## 🎨 Design System
+
+S.P.H.E.R.E. uses a custom dark-only glassmorphism design system:
+
+- **Typography**: Space Grotesk (UI) + JetBrains Mono (data/code)
+- **Glass Panels**: `backdrop-filter: blur(16px)` with subtle border highlights
+- **Color Palette**: Electric cyan (`#00d4ff`), emerald (`#00e599`), amber (`#f59e0b`), crimson (`#ff3b5c`)
+- **CRT Overlay**: Subtle scanline texture with micro-flicker animation
+- **Animations**: Spring-based value interpolation via Framer Motion
+
+---
+
+## 📄 License
+
+This project is open source. See the repository for license details.
+
+---
+
+<p align="center">
+  <sub>Built with ❤️ for high-stakes operational safety</sub>
+</p>

@@ -8,7 +8,7 @@ import { useTelemetryStore } from '@/lib/useTelemetryStore'
 import { AlertTriangle, Heart, Activity, Brain, Shield } from 'lucide-react'
 
 interface DigitalTwinSceneProps {
-  currentCondition: 'diabetes' | 'arrhythmia' | 'asthma' | 'epilepsy'
+  transparent?: boolean
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -697,7 +697,7 @@ function HologramScene() {
 
   // Subscribe to Zustand reactive updates to populate HUD overlay cards dynamically
   // Subscribe to Zustand reactive updates to populate HUD overlay cards dynamically
-  const currentCondition = useTelemetryStore((s) => s.currentCondition)
+
   const wireframeMode = useTelemetryStore((s) => s.wireframeMode)
   const bpm = useTelemetryStore((s) => s.liveTelemetryFrame.bpm)
   const oxygen = useTelemetryStore((s) => s.liveTelemetryFrame.oxygenSaturation)
@@ -1274,35 +1274,29 @@ function HologramScene() {
   )
 }
 
-export default function DigitalTwinScene({ currentCondition }: DigitalTwinSceneProps) {
+export default function DigitalTwinScene({ transparent = false }: DigitalTwinSceneProps) {
   const orbitRef = useRef<any>(null)
 
   useEffect(() => {
-    // Connect to the WebSocket telemetry server on mount
-    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-    const wsUrl = `ws://${host}:8080/diabetes`
-    useTelemetryStore.getState().disconnectFromTelemetry()
-    useTelemetryStore.getState().connectToTelemetry(wsUrl)
-    return () => {
-      // Clean up connection on unmount
+    if (!transparent) {
+      const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+      const wsUrl = `ws://${host}:8080/diabetes`
       useTelemetryStore.getState().disconnectFromTelemetry()
+      useTelemetryStore.getState().connectToTelemetry(wsUrl)
+      return () => {
+        useTelemetryStore.getState().disconnectFromTelemetry()
+      }
     }
-  }, [])
-
-  useEffect(() => {
-    // Sync the currentCondition prop to the Zustand store
-    useTelemetryStore.getState().setCurrentCondition(currentCondition)
-  }, [currentCondition])
-
+  }, [transparent])
   const isRotating = useTelemetryStore((s) => s.isRotating)
   const selectedOrgan = useTelemetryStore((s) => s.selectedOrgan)
 
   return (
-    <div className="w-full h-full relative bg-[#040806]">
+    <div className={`w-full h-full relative ${transparent ? 'bg-transparent' : 'bg-[#040806]'}`}>
       <Canvas
         camera={{ position: [0, 0, 3.8], fov: 50 }}
-        gl={{ antialias: true, alpha: false }}
-        style={{ background: '#040806' }}
+        gl={{ antialias: true, alpha: transparent }}
+        style={{ background: transparent ? 'transparent' : '#040806' }}
       >
         <ambientLight intensity={0.25} />
         
@@ -1324,8 +1318,10 @@ export default function DigitalTwinScene({ currentCondition }: DigitalTwinSceneP
           minDistance={0.2}
           maxDistance={8.0}
           enablePan={false}
-          enableZoom={true}
+          enableZoom={!transparent}
           zoomSpeed={0.6}
+          autoRotate={transparent}
+          autoRotateSpeed={0.8}
         />
       </Canvas>
     </div>

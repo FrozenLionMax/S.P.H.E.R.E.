@@ -53,6 +53,24 @@ let state = {
   alertness: 96.0
 };
 
+// Recovery buffers for gradual pharmacokinetic/system interventions
+let recoveryBuffers = {
+  heartRate: 0,
+  spO2: 0,
+  cognitiveLatency: 0,
+  perclos: 0,
+  microCorrections: 0,
+  gForce: 0,
+  pCO2: 0,
+  suitPressure: 0,
+  tremorAmplitude: 0,
+  eda: 0,
+  gripForce: 0,
+  gripAsymmetry: 0,
+  alertness: 0,
+  v2vLink: 0
+};
+
 // Helper: Calculate ECG wave amplitude based on normalized phase
 function getECGValue(p) {
   if (p < 0.08) {
@@ -78,12 +96,19 @@ function getECGValue(p) {
   return 0;
 }
 
-// Helper: Introduce biological noise
+// Helper: Introduce biological noise with elastic bounds
 function applyJitter(val, min, max, maxDelta) {
   const delta = (Math.random() * maxDelta * 2) - maxDelta;
   let newVal = val + delta;
-  if (newVal < min) newVal = min;
-  if (newVal > max) newVal = max;
+  
+  // Organic elastic bounds: if pushed out of bounds by subsystem drugs/buffers, 
+  // slowly drift back to homeostasis instead of hard-snapping.
+  if (newVal < min) {
+    return newVal + (min - newVal) * 0.05; // 5% recovery pull
+  }
+  if (newVal > max) {
+    return newVal - (newVal - max) * 0.05;
+  }
   return newVal;
 }
 
@@ -124,6 +149,20 @@ function resetStateToTrack(trackName) {
 // Simulation Loop
 setInterval(() => {
   const trackConf = TRACKS[state.activeTrack] || TRACKS.PILOT;
+
+  // Apply gradual Pharmacokinetic / System Recovery buffers
+  const bleedRate = 0.15; // Bleed 15% of the remaining buffer every second
+  for (const key of Object.keys(recoveryBuffers)) {
+    if (Math.abs(recoveryBuffers[key]) > 0.01) {
+      const bleedAmount = recoveryBuffers[key] * bleedRate;
+      if (state[key] !== undefined) {
+        state[key] += bleedAmount;
+      }
+      recoveryBuffers[key] -= bleedAmount;
+    } else {
+      recoveryBuffers[key] = 0;
+    }
+  }
 
   if (state.isCrisisActive) {
     // Deterministic Crisis Degradation for core values
@@ -414,8 +453,58 @@ wss.on('connection', (ws, req) => {
         }
 
         if (parsed.type === 'RESOLVE_CRISIS') {
-          console.log(`[WS] Crisis resolved for track: ${state.activeTrack}`);
-          resetStateToTrack(state.activeTrack);
+          console.log(`[WS] Stabilization Protocol Engaged for track: ${state.activeTrack}`);
+          state.isCrisisActive = false;
+          // Apply massive recovery buffers to naturally pull them back to homeostasis over 10 seconds
+          recoveryBuffers.heartRate = (75 - state.heartRate) * 1.5;
+          recoveryBuffers.spO2 = (98.2 - state.spO2) * 1.5;
+          recoveryBuffers.cognitiveLatency = (210 - state.cognitiveLatency) * 1.5;
+          recoveryBuffers.pCO2 = (2.5 - state.pCO2) * 1.5;
+          recoveryBuffers.suitPressure = (4.3 - state.suitPressure) * 1.5;
+          recoveryBuffers.tremorAmplitude = (0.02 - state.tremorAmplitude) * 1.5;
+          recoveryBuffers.eda = (1.8 - state.eda) * 1.5;
+          recoveryBuffers.alertness = (96.0 - state.alertness) * 1.5;
+          recoveryBuffers.perclos = (3.5 - state.perclos) * 1.5;
+          recoveryBuffers.gForce = (1.0 - state.gForce) * 1.5;
+        }
+
+        if (parsed.type === 'EXECUTE_SUBSYSTEM') {
+          console.log(`[WS] Subsystem Command Executed: ${parsed.cmd}`);
+          // Add to recovery buffers for gradual realistic effect
+          // Universal stress relief: Every action slightly improves heart rate
+          recoveryBuffers.heartRate -= 5;
+          
+          switch (parsed.cmd) {
+            // ASTRONAUT (Env: Suit Pressure)
+            case 'Aero Payload': recoveryBuffers.suitPressure += 0.5; break;
+            case 'Orbit Calc': recoveryBuffers.cognitiveLatency -= 25; break;
+            case 'Nav Systems': recoveryBuffers.heartRate -= 15; break; // Extra HR drop
+            case 'Thruster Align': recoveryBuffers.pCO2 -= 2.0; recoveryBuffers.suitPressure += 0.2; break;
+            
+            // PILOT (Env: Altitude/environmentMetric)
+            case 'Flaps Config': recoveryBuffers.gForce -= 1.5; recoveryBuffers.environmentMetric -= 100; break;
+            case 'Landing Gear': recoveryBuffers.heartRate -= 20; recoveryBuffers.environmentMetric -= 200; break;
+            case 'Avionics': recoveryBuffers.cognitiveLatency -= 30; recoveryBuffers.environmentMetric -= 50; break;
+            case 'Radio Comms': recoveryBuffers.spO2 += 4.0; break;
+            
+            // SURGEON (Env: Hand Tremor Index / tremorAmplitude)
+            case 'Scalpel Sync': recoveryBuffers.tremorAmplitude -= 0.1; break;
+            case 'Scope Zoom': recoveryBuffers.eda -= 2.0; recoveryBuffers.tremorAmplitude -= 0.05; break;
+            case 'Hemostat': recoveryBuffers.heartRate -= 15; recoveryBuffers.tremorAmplitude -= 0.03; break;
+            case 'Suture Bot': recoveryBuffers.gripForce += 5.0; recoveryBuffers.tremorAmplitude -= 0.08; break;
+            
+            // TRAIN_PILOT (Env: Cognitive Latency)
+            case 'Brake Override': recoveryBuffers.perclos -= 10.0; recoveryBuffers.cognitiveLatency -= 15; break;
+            case 'Track Switch': recoveryBuffers.heartRate -= 12; recoveryBuffers.cognitiveLatency -= 10; break;
+            case 'Horn Signal': recoveryBuffers.cognitiveLatency -= 30; break;
+            case 'Door Control': recoveryBuffers.microCorrections += 10; recoveryBuffers.cognitiveLatency -= 15; break;
+            
+            // TRUCKER (Env: Alertness)
+            case 'Engine Brake': recoveryBuffers.gripAsymmetry -= 20.0; recoveryBuffers.alertness += 5; break;
+            case 'Trailer Hitch': recoveryBuffers.heartRate -= 10; recoveryBuffers.alertness += 10; break;
+            case 'CB Radio': recoveryBuffers.alertness += 30; break;
+            case 'Wiper Fluid': recoveryBuffers.v2vLink += 15; recoveryBuffers.alertness += 15; break;
+          }
         }
       } catch (err) {
         console.error('[WS] Error parsing message:', err);

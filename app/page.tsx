@@ -9,6 +9,8 @@ import {
 } from 'recharts'
 import { useTelemetry } from '@/lib/useTelemetry'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import DigitalTwinScene from '@/components/DigitalTwinScene'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -165,7 +167,7 @@ const PROFILE_HARDWARE = {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function fmt(n: number, p = 1) { return n.toFixed(p) }
+function fmt(n: number, _p?: any) { return n.toFixed(2) }
 
 function nowTime() {
   return new Date().toLocaleTimeString('en-US', { hour12: false })
@@ -184,10 +186,10 @@ function pct(v: number, min: number, max: number) {
 // AnimatedValue
 // ─────────────────────────────────────────────────────────────────────────────
 
-function AnimatedValue({ value, precision = 1 }: { value: number; precision?: number }) {
+function AnimatedValue({ value, precision }: { value: number; precision?: any }) {
   const sp = useSpring(value, { stiffness: 50, damping: 16 })
-  const tx = useTransform(sp, (v) => v.toFixed(precision))
-  const [str, setStr] = useState(value.toFixed(precision))
+  const tx = useTransform(sp, (v) => v.toFixed(2))
+  const [str, setStr] = useState(value.toFixed(2))
   useEffect(() => { sp.set(value) }, [value, sp])
   useEffect(() => tx.on('change', setStr), [tx])
   return <>{str}</>
@@ -1045,6 +1047,7 @@ function AstronautPressureVent({ crisis, pressure }: { crisis: boolean; pressure
             stroke={crisis ? C.red : C.cyan} 
             strokeWidth="3"
             strokeDasharray={2 * Math.PI * 22}
+            initial={{ strokeDashoffset: (2 * Math.PI * 22) }}
             animate={{ strokeDashoffset: (2 * Math.PI * 22) * (1 - Math.min(1, pressure / 4.3)) }}
             transition={{ duration: 0.4 }}
             style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}
@@ -1233,6 +1236,7 @@ function HealthRing({ score, crisis }: { score: number; crisis: boolean }) {
             strokeWidth={5}
             strokeLinecap="round"
             strokeDasharray={`${circ}`}
+            initial={{ strokeDashoffset: circ }}
             animate={{ strokeDashoffset: circ - dash }}
             transition={{ duration: 1.2, ease: [0.22, 0, 0, 1] }}
             style={{ transformOrigin: '38px 38px', transform: 'rotate(-90deg)' }}
@@ -1398,7 +1402,7 @@ function MetricCard({ label, sublabel, value, unit, history, status, precision =
 
       <div className="px-0 pb-0" style={{ height: 56 }}>
         {mounted ? (
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <AreaChart data={pts} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
@@ -1459,7 +1463,7 @@ function VitalsChart({ samples }: { samples: any[] }) {
 
   const data = samples.map((s, i) => ({ t: i, spo2: s.spO2, hr: s.heartRate / 1.4 }))
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
       <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
         <defs>
           <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
@@ -1554,9 +1558,9 @@ function Btn({
       onClick={disabled ? undefined : onClick}
       className={`${full ? 'w-full' : ''} px-3 py-1.5 text-[9px] font-mono font-semibold tracking-[0.16em] uppercase rounded-sm ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'} select-none`}
       style={{ background: s.bg, border: `1px solid ${s.border}`, color: s.color }}
-      whileHover={disabled ? {} : { scale: 1.02, filter: 'brightness(1.18)' }}
-      whileTap={disabled ? {} : { scale: 0.97 }}
-      transition={{ type: 'spring', stiffness: 420, damping: 26 }}
+      whileHover={disabled ? {} : { scale: 1.02, filter: 'brightness(1.25)', boxShadow: `0 0 12px ${s.color}40` }}
+      whileTap={disabled ? {} : { scale: 0.95, filter: 'brightness(1.6)', boxShadow: `0 0 25px ${s.color}90`, background: `${s.color}30` }}
+      transition={{ type: 'spring', stiffness: 500, damping: 20 }}
     >
       {children}
     </motion.button>
@@ -1619,7 +1623,8 @@ function Divider() {
 }
 
 export default function Page() {
-  const { samples, isCrisis, connected, isPaused, togglePause, triggerCrisisMode, resolveCrisisMode, setTrack } = useTelemetry()
+  const router = useRouter()
+  const { samples, isCrisis, connected, isPaused, togglePause, triggerCrisisMode, resolveCrisisMode, setTrack, executeSubsystem } = useTelemetry()
   const crisis = isCrisis;
   
   const [activeTrackKey, setActiveTrackKey] = useState<keyof typeof TRACK_CONFIGS>('PILOT');
@@ -2043,9 +2048,11 @@ export default function Page() {
 
   const radarData = PROFILE_METRICS[activeTrackKey].map((m) => {
     const rawVal = (last as any)[m.key] ?? 0;
+    const baseVal = samples.length > 0 ? (samples[0] as any)[m.key] ?? 0 : 0;
     return {
       axis: m.label.slice(0, 6),
-      v: pct(rawVal, m.min, m.max)
+      v: pct(rawVal, m.min, m.max),
+      baseline: pct(baseVal, m.min, m.max) || 50
     };
   });
 
@@ -2252,7 +2259,10 @@ export default function Page() {
 
           <Magnetic>
             <motion.button
-              onClick={() => setIsOnboarded(true)}
+              onClick={() => {
+                setIsOnboarded(true)
+                router.push('/?onboarded=true')
+              }}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.65, duration: 0.4 }}
@@ -2332,23 +2342,27 @@ export default function Page() {
         style={{ height: 56, borderBottom: '1px solid var(--border)' }}
       >
         <div className="flex items-center gap-4 flex-1 h-full min-w-0">
-          {/* Logo & Title */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          {/* Logo & Title (Home Button) */}
+          <button 
+            onClick={() => { setIsOnboarded(false); router.push('/'); }}
+            className="flex items-center gap-2.5 shrink-0 cursor-pointer text-left group transition-all hover:opacity-90"
+            title="Return to Operator Selection"
+          >
             <div className="relative flex items-center justify-center">
               <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
-                <circle cx="6" cy="6" r="2.2" fill={crisis ? C.red : C.cyan} />
-                <circle cx="6" cy="6" r="5" stroke={crisis ? C.red : C.cyan} strokeWidth="0.8" fill="none" opacity="0.35" />
+                <circle cx="6" cy="6" r="2.2" fill={crisis ? C.red : C.cyan} className="group-hover:fill-white transition-colors" />
+                <circle cx="6" cy="6" r="5" stroke={crisis ? C.red : C.cyan} strokeWidth="0.8" fill="none" opacity="0.35" className="group-hover:stroke-white transition-colors" />
               </svg>
             </div>
             <div className="flex flex-col justify-center">
-              <span className="text-[13px] font-semibold tracking-[0.2em] uppercase font-mono" style={{ color: C.fg }}>
+              <span className="text-[13px] font-semibold tracking-[0.2em] uppercase font-mono group-hover:text-white transition-colors" style={{ color: C.fg }}>
                 S.P.H.E.R.E.
               </span>
-              <span className="text-[8px] font-mono tracking-widest uppercase" style={{ color: trackConf.themeColor }}>
-                {trackConf.title}
+              <span className="text-[8px] font-mono tracking-widest uppercase group-hover:brightness-125 transition-all" style={{ color: trackConf.themeColor }}>
+                TELEMETRY
               </span>
             </div>
-          </div>
+          </button>
         </div>
 
         {/* Right Side Controls */}
@@ -2358,7 +2372,7 @@ export default function Page() {
             <div className="flex flex-col items-end justify-center">
               <span className="text-[8px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>Cardiac</span>
               <span className="text-[10px] font-mono font-bold" style={{ color: crisis ? C.red : C.cyan }}>
-                {hr || 75} BPM
+                {fmt(hr || 75)} BPM
               </span>
             </div>
             <div className="h-9 w-32 rounded-sm overflow-hidden flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -2406,7 +2420,7 @@ export default function Page() {
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
             <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: healthScore > 75 ? C.green : healthScore > 50 ? C.amber : C.red }} />
             <span className="text-[8px] font-mono tabular-nums whitespace-nowrap" style={{ color: C.muted }}>
-              HLT <span className="font-semibold" style={{ color: healthScore > 75 ? C.green : C.amber }}>{healthScore}%</span>
+              HLT <span className="font-semibold" style={{ color: healthScore > 75 ? C.green : C.amber }}>{healthScore.toFixed(2)}%</span>
             </span>
           </div>
 
@@ -2438,20 +2452,7 @@ export default function Page() {
             )}
           </AnimatePresence>
 
-          <a 
-            href={`/digital-twin?condition=${
-              activeTrackKey === 'ASTRONAUT' ? 'asthma' :
-              activeTrackKey === 'PILOT' ? 'arrhythmia' :
-              activeTrackKey === 'SURGEON' ? 'epilepsy' : 'diabetes'
-            }`} 
-            className="inline-flex shrink-0"
-          >
-            <span 
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-emerald-500/20 hover:border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 text-[9px] font-mono font-bold tracking-widest text-emerald-400 hover:text-emerald-300 transition-all duration-200 cursor-pointer"
-            >
-              DIGITAL TWIN
-            </span>
-          </a>
+
 
           <button
             onClick={() => setShowShortcuts(true)}
@@ -2462,17 +2463,6 @@ export default function Page() {
             <span className="text-xs font-mono font-bold">?</span>
           </button>
 
-          <button
-            onClick={handleCaptureScreenshot}
-            className="flex items-center justify-center w-7 h-7 rounded-sm border hover:border-white/20 transition-all cursor-pointer shrink-0"
-            style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: C.muted }}
-            title="Capture Dashboard PNG"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-              <circle cx="12" cy="13" r="3" strokeWidth={2} />
-            </svg>
-          </button>
 
           <div className="px-2 py-1 rounded-sm text-[9px] font-mono tabular-nums tracking-widest border shrink-0" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: C.muted }}>
             {clock}
@@ -2568,8 +2558,8 @@ export default function Page() {
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right flex flex-col justify-center">
-                  <span className="text-[8px] tracking-[0.2em] uppercase" style={{ color: C.muted }}>Real-time Computation</span>
-                  <span className="text-xs font-bold mt-0.5" style={{ color: crisis ? C.red : trackConf.themeColor }}>
+                  <span className="text-[9px] tracking-[0.2em] uppercase font-semibold" style={{ color: crisis ? C.red : trackConf.themeColor, filter: 'brightness(1.3)' }}>Real-time Computation</span>
+                  <span className="text-sm font-bold mt-0.5" style={{ color: crisis ? '#ff6b84' : trackConf.themeColor, filter: 'brightness(1.5) drop-shadow(0 0 6px currentColor)' }}>
                     {activeTrackKey === 'TRAIN_PILOT' && (
                       <>{((last.perclos || 0) * 0.7).toFixed(2)} + {(((last.cognitiveLatency || 0) / 20) * 0.3).toFixed(2)} = {((last.perclos || 0) * 0.7 + ((last.cognitiveLatency || 0) / 20) * 0.3).toFixed(2)}</>
                     )}
@@ -2600,7 +2590,35 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="grid gap-3 grid-cols-1 lg:grid-cols-[1fr_420px_200px]">
+            <div className="grid gap-3 grid-cols-1 lg:grid-cols-[250px_1fr_420px]">
+              <GlassPanel className="rounded-xl overflow-hidden relative flex flex-col" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
+                <div className="flex items-center justify-between px-4 py-3 shrink-0 relative z-10" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}>
+                  <div className="flex items-center gap-4">
+                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>3D Biometric Matrix</span>
+                  </div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]"></div>
+                </div>
+                <div className="flex-1 w-full min-h-[160px] relative z-0">
+                  <DigitalTwinScene transparent={true} />
+                </div>
+                
+                {/* Embedded Proceed Button */}
+                <div className="p-3 bg-black/40 border-t border-white/5 backdrop-blur-md shrink-0 relative z-10">
+                  <a 
+                    href={`/digital-twin`}
+                    className="flex w-full items-center justify-center py-2 text-[9px] font-mono font-bold tracking-[0.15em] uppercase rounded-sm border transition-all duration-300 hover:brightness-125"
+                    style={{
+                      background: `linear-gradient(90deg, ${trackConf.themeColor}15, ${trackConf.themeColor}25)`,
+                      borderColor: `rgba(255,255,255,0.1)`,
+                      color: C.fg,
+                      boxShadow: `0 0 10px ${trackConf.themeColor}10`
+                    }}
+                  >
+                    PROCEED TO 3D DIGITAL TWIN ➔
+                  </a>
+                </div>
+              </GlassPanel>
+
               <GlassPanel className="rounded-xl overflow-hidden" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                 <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
                   <div className="flex items-center gap-4">
@@ -2619,32 +2637,6 @@ export default function Page() {
                 </div>
                 <div className="flex-1 flex items-center justify-center p-3 bg-black">
                   <ECG crisis={crisis} hr={hr} width={396} height={96} glow={true} audioEnabled={audioEnabled} sound={true} audioCtx={audioCtx} volume={volume} onBeat={triggerAudioPulse} />
-                </div>
-              </GlassPanel>
-
-              <GlassPanel className="rounded-xl flex flex-col" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-                  <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>System Radar</span>
-                </div>
-                <div className="flex-1 flex items-center justify-center" style={{ padding: '4px 0', minWidth: 0, minHeight: 0 }}>
-                  {mounted ? (
-                    <ResponsiveContainer width="100%" height={100}>
-                      <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
-                        <defs>
-                          <filter id="radarGlow" x="-20%" y="-20%" width="140%" height="140%">
-                            <feGaussianBlur stdDeviation="3" result="blur" />
-                            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                          </filter>
-                        </defs>
-                        <PolarGrid stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
-                        <PolarAngleAxis dataKey="axis" tick={{ fontSize: 8, fill: C.subtle, fontFamily: 'var(--font-mono)' }} />
-                        <Radar dataKey="v" stroke={crisis ? C.red : trackConf.themeColor}
-                          fill={crisis ? C.red : trackConf.themeColor} fillOpacity={0.3} strokeWidth={2} filter="url(#radarGlow)" isAnimationActive={true} animationDuration={600} />
-                      </RadarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div style={{ height: 100, width: '100%' }} />
-                  )}
                 </div>
               </GlassPanel>
             </div>
@@ -2732,29 +2724,30 @@ export default function Page() {
 
           <div className="px-5 py-3 shrink-0 grid grid-cols-3 gap-x-3 gap-y-2.5" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)' }}>
             <div className="flex flex-col">
-              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>SPO2</span>
+              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>SPO2 <span className="text-[7px] text-green-500/50 ml-1">(&gt;95)</span></span>
               <span className="text-[11px] font-mono font-semibold tabular-nums mt-0.5" style={{ color: STATUS[spo2St] }}>{fmt(spo2)}%</span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>HR</span>
+              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>HR <span className="text-[7px] text-green-500/50 ml-1">(60-100)</span></span>
               <span className="text-[11px] font-mono font-semibold tabular-nums mt-0.5" style={{ color: STATUS[hrSt] }}>{fmt(hr, 0)}<span className="text-[8px] font-normal text-slate-500 ml-0.5">bpm</span></span>
             </div>
             <div className="flex flex-col">
               <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>
                 {activeTrackKey === 'ASTRONAUT' ? 'SUIT' : activeTrackKey === 'PILOT' ? 'ALT' : activeTrackKey === 'SURGEON' ? 'TRMR' : activeTrackKey === 'TRAIN_PILOT' ? 'COGL' : 'ALRT'}
+                <span className="text-[7px] text-green-500/50 ml-1">(~{fmt(trackConf.baseEnvVal, activeTrackKey === 'SURGEON' ? 2 : 0)})</span>
               </span>
               <span className="text-[11px] font-mono font-semibold tabular-nums mt-0.5" style={{ color: STATUS[envSt] }}>{fmt(envMetric, activeTrackKey === 'SURGEON' ? 3 : 1)}<span className="text-[8px] font-normal text-slate-500 ml-0.5">{trackConf.metricUnit}</span></span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>LAT</span>
+              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>LAT <span className="text-[7px] text-green-500/50 ml-1">(&lt;300)</span></span>
               <span className="text-[11px] font-mono font-semibold tabular-nums mt-0.5" style={{ color: STATUS[latSt] }}>{fmt(lat, 0)}<span className="text-[8px] font-normal text-slate-500 ml-0.5">ms</span></span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>TEMP</span>
+              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>TEMP <span className="text-[7px] text-green-500/50 ml-1">(98.6)</span></span>
               <span className="text-[11px] font-mono font-semibold tabular-nums mt-0.5" style={{ color: STATUS[tempSt] }}>{fmt(temp, 1)}<span className="text-[8px] font-normal text-slate-500 ml-0.5">°F</span></span>
             </div>
             <div className="flex flex-col">
-              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>PRES</span>
+              <span className="text-[8px] font-mono tracking-wider" style={{ color: C.subtle }}>PRES <span className="text-[7px] text-green-500/50 ml-1">(~14.7)</span></span>
               <span className="text-[11px] font-mono font-semibold tabular-nums mt-0.5" style={{ color: STATUS[pressureSt] }}>{fmt(pressure, 2)}<span className="text-[8px] font-normal text-slate-500 ml-0.5">psi</span></span>
             </div>
           </div>
@@ -2811,12 +2804,31 @@ export default function Page() {
           </div>
 
           <div className="px-5 pt-3 pb-4 shrink-0">
-            <SectionLabel>Controls</SectionLabel>
+            <SectionLabel>Operator Subsystems</SectionLabel>
+            <div className="grid grid-cols-2 gap-1.5 mb-4">
+              {activeTrackKey === 'ASTRONAUT' && ['Aero Payload', 'Orbit Calc', 'Nav Systems', 'Thruster Align'].map((btn) => (
+                <Btn key={btn} variant="ghost" onClick={() => { executeSubsystem(btn); setLocalLogs(p => [...p.slice(-50), { id: Date.now() + Math.random(), time: nowTime(), level: 'SYS', msg: `[CMD] Executing: ${btn}... SUCCESS` }]); }}>{btn}</Btn>
+              ))}
+              {activeTrackKey === 'PILOT' && ['Flaps Config', 'Landing Gear', 'Avionics', 'Radio Comms'].map((btn) => (
+                <Btn key={btn} variant="ghost" onClick={() => { executeSubsystem(btn); setLocalLogs(p => [...p.slice(-50), { id: Date.now() + Math.random(), time: nowTime(), level: 'SYS', msg: `[CMD] Executing: ${btn}... SUCCESS` }]); }}>{btn}</Btn>
+              ))}
+              {activeTrackKey === 'SURGEON' && ['Scalpel Sync', 'Scope Zoom', 'Hemostat', 'Suture Bot'].map((btn) => (
+                <Btn key={btn} variant="ghost" onClick={() => { executeSubsystem(btn); setLocalLogs(p => [...p.slice(-50), { id: Date.now() + Math.random(), time: nowTime(), level: 'SYS', msg: `[CMD] Executing: ${btn}... SUCCESS` }]); }}>{btn}</Btn>
+              ))}
+              {activeTrackKey === 'TRAIN_PILOT' && ['Brake Override', 'Track Switch', 'Horn Signal', 'Door Control'].map((btn) => (
+                <Btn key={btn} variant="ghost" onClick={() => { executeSubsystem(btn); setLocalLogs(p => [...p.slice(-50), { id: Date.now() + Math.random(), time: nowTime(), level: 'SYS', msg: `[CMD] Executing: ${btn}... SUCCESS` }]); }}>{btn}</Btn>
+              ))}
+              {activeTrackKey === 'TRUCKER' && ['Engine Brake', 'Trailer Hitch', 'CB Radio', 'Wiper Fluid'].map((btn) => (
+                <Btn key={btn} variant="ghost" onClick={() => { executeSubsystem(btn); setLocalLogs(p => [...p.slice(-50), { id: Date.now() + Math.random(), time: nowTime(), level: 'SYS', msg: `[CMD] Executing: ${btn}... SUCCESS` }]); }}>{btn}</Btn>
+              ))}
+            </div>
+
+            <SectionLabel>Global Controls</SectionLabel>
             <div className="grid grid-cols-2 gap-1.5 mb-2">
               <Btn variant="accent" onClick={triggerCrisisMode} disabled={demoActive}>Trigger Override</Btn>
               <Btn variant="ok" onClick={resolveCrisisMode} disabled={demoActive}>Resolve Crisis</Btn>
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5 mb-4">
               <Btn variant={demoActive ? 'danger' : 'accent'} onClick={startDemo}>
                 {demoActive ? 'Stop' : 'Demo'}
               </Btn>

@@ -934,7 +934,7 @@ export default function DigitalTwin() {
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-emerald-500/20 hover:border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 text-[9px] font-mono font-bold tracking-widest text-emerald-400 hover:text-emerald-300 transition-all duration-200 cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            S.P.H.E.R.E. TELE-ROBOTIC SURGERY CONTROL MATRIX
+            SPHERE TELEMETRY
           </span>
         </a>
 
