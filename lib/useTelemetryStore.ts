@@ -23,13 +23,23 @@ export interface TelemetryStoreState {
   liveTelemetryFrame: TelemetryDataFrame
   websocketStatus: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
   reconnectAttempts: number
+  selectedOrgan: 'none' | 'heart' | 'lungs' | 'brain'
+
+  // --- UI Toggles ---
+  isRotating: boolean
+  wireframeMode: 'wireframe' | 'dots' | 'solid'
 
   // --- Actions ---
   connectToTelemetry: (websocketUrl: string) => void
   disconnectFromTelemetry: () => void
   setActiveUserProfile: (profile: string) => void
   setCurrentCondition: (condition: ConditionType) => void
+  setSelectedOrgan: (organ: 'none' | 'heart' | 'lungs' | 'brain') => void
+  setIsRotating: (rotating: boolean | ((prev: boolean) => boolean)) => void
+  setWireframeMode: (mode: 'wireframe' | 'dots' | 'solid') => void
   updateTelemetryFrame: (frame: Partial<TelemetryDataFrame>) => void
+  customZoomTarget: { pos: number[], target: number[] } | null
+  setCustomZoomTarget: (target: { pos: number[], target: number[] } | null) => void
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,21 +51,29 @@ let reconnectTimeoutId: NodeJS.Timeout | null = null
 
 export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
   // --- Initial States ---
-  activeUserProfile: 'SUBJECT: TWIN-908',
-  currentCondition: 'cardiac',
+  activeUserProfile: 'PILOT',
+  currentCondition: 'diabetes',
   liveTelemetryFrame: {
     bpm: 72,
     oxygenSaturation: 98,
-    brainwaveFrequency: 12,
-    glucose: 120,
+    brainwaveFrequency: 12.5,
+    glucose: 95,
     deviceStatus: 'nominal'
   },
   websocketStatus: 'idle',
   reconnectAttempts: 0,
+  selectedOrgan: 'none',
+  isRotating: true,
+  wireframeMode: 'wireframe',
+  customZoomTarget: null,
 
   // --- Setters ---
   setActiveUserProfile: (profile) => set({ activeUserProfile: profile }),
   setCurrentCondition: (condition) => set({ currentCondition: condition }),
+  setSelectedOrgan: (organ) => set({ selectedOrgan: organ }),
+  setIsRotating: (val) => set((s) => ({ isRotating: typeof val === 'function' ? val(s.isRotating) : val })),
+  setWireframeMode: (mode) => set({ wireframeMode: mode }),
+  setCustomZoomTarget: (target) => set({ customZoomTarget: target }),
   updateTelemetryFrame: (frame) => 
     set((state) => ({
       liveTelemetryFrame: {
@@ -199,3 +217,4 @@ export const useGlucose = () => useTelemetryStore((s) => s.liveTelemetryFrame.gl
 export const useCurrentCondition = () => useTelemetryStore((s) => s.currentCondition)
 export const useActiveUserProfile = () => useTelemetryStore((s) => s.activeUserProfile)
 export const useWebsocketStatus = () => useTelemetryStore((s) => s.websocketStatus)
+export const useSelectedOrgan = () => useTelemetryStore((s) => s.selectedOrgan)

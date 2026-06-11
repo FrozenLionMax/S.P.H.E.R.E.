@@ -143,8 +143,14 @@
   .border-accent { border-color: var(--border-accent); }
   .glow-accent { box-shadow: 0 0 0 1px var(--border-accent), 0 0 20px var(--accent-glow); }
 
-  /* Scanline texture */
+  /* Scanline texture — uses a pseudo-element overlay so the parent remains interactive */
   .scanlines {
+    position: relative;
+  }
+  .scanlines::after {
+    content: '';
+    position: absolute;
+    inset: 0;
     background-image: repeating-linear-gradient(
       0deg,
       transparent,
@@ -153,6 +159,7 @@
       rgba(0,0,0,0.08) 4px
     );
     pointer-events: none;
+    z-index: 9999;
   }
 
   /* Animated underline */
@@ -289,6 +296,27 @@
   
   .crt-flicker {
     animation: crt-flicker 0.15s infinite;
+  }
+
+  /* Premium Glassmorphism Depth System */
+  .glass-panel {
+    background: rgba(8, 13, 10, 0.5) !important;
+    backdrop-filter: blur(16px) saturate(1.2) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(1.2) !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    box-shadow: 
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 8px 32px rgba(0, 0, 0, 0.4) !important;
+    transition: transform 0.2s ease, border-color 0.3s ease, box-shadow 0.3s ease !important;
+  }
+  
+  .glass-panel:hover {
+    border-color: rgba(0, 255, 170, 0.25) !important;
+    box-shadow: 
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 12px 40px rgba(0, 0, 0, 0.6),
+      0 0 20px rgba(0, 255, 170, 0.05) !important;
+    transform: translateY(-2px) scale(1.01);
   }
 }
 

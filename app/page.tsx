@@ -1624,10 +1624,14 @@ export default function Page() {
   
   const [activeTrackKey, setActiveTrackKey] = useState<keyof typeof TRACK_CONFIGS>('PILOT');
   const [mounted, setMounted] = useState(false);
+  const [isOnboarded, setIsOnboarded] = useState(false);
+  
   useEffect(() => {
     setMounted(true);
+    if (typeof window !== 'undefined' && window.location.search.includes('onboarded=true')) {
+      setIsOnboarded(true);
+    }
   }, []);
-  const [isOnboarded, setIsOnboarded] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [audioCtx, setAudioCtx] = useState<any>(null);
   const [volume, setVolume] = useState(0.5);
@@ -2434,7 +2438,14 @@ export default function Page() {
             )}
           </AnimatePresence>
 
-          <a href="/digital-twin" className="inline-flex shrink-0">
+          <a 
+            href={`/digital-twin?condition=${
+              activeTrackKey === 'ASTRONAUT' ? 'asthma' :
+              activeTrackKey === 'PILOT' ? 'arrhythmia' :
+              activeTrackKey === 'SURGEON' ? 'epilepsy' : 'diabetes'
+            }`} 
+            className="inline-flex shrink-0"
+          >
             <span 
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-emerald-500/20 hover:border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 text-[9px] font-mono font-bold tracking-widest text-emerald-400 hover:text-emerald-300 transition-all duration-200 cursor-pointer"
             >

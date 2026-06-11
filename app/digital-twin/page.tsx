@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import { motion } from 'framer-motion'
 import {
   Activity,
   Heart,
@@ -64,11 +65,11 @@ const CONDITIONS: Record<ConditionKey, ConditionInfo> = {
     stress: 68,
     desc: 'Systemic metabolic crisis detected. Elevated plasma glucose levels exceeding 260 mg/dL. Osmotic shift modeling active.',
     logs: [
-      'WARNING: Elevated blood glucose levels detected (>250mg/dL)',
-      'Alert: Pancreatic metabolic throughput saturated',
-      'Diagnostics: Hyperosmolar state predicted',
-      'System: Auto-insulin titration loop activated',
-      'Status: Subcutaneous sensor link calibrated'
+      'Telemetry stream integrity 99.6%',
+      'Scanner: Re-evaluating... Diabetic Glucose Spike parameters...',
+      'System Integrity: 99.8%',
+      'Diagnostics: Osmotic shift modeling active',
+      'Status: Systemic metabolic crisis detected'
     ]
   },
   arrhythmia: {
@@ -83,11 +84,11 @@ const CONDITIONS: Record<ConditionKey, ConditionInfo> = {
     stress: 76,
     desc: 'Critical cardiac instability detected. Ectopic pacemaking in ventricles observed. Visualizing erratic PQRST complex.',
     logs: [
-      'WARNING: Heart rate spike detected (BPM > 130)',
-      'Alert: PVC (Premature Ventricular Contraction) flagged',
+      'Telemetry stream integrity 99.6%',
+      'Scanner: Re-evaluating... Cardiovascular Arrhythmia parameters...',
+      'System Integrity: 99.8%',
       'Diagnostics: High ventricular load observed',
-      'System: Auto-infusion pump calibrated to standby',
-      'CRITICAL: Cardiac synchronicity degraded'
+      'Status: Critical cardiac instability detected'
     ]
   },
   asthma: {
@@ -102,11 +103,11 @@ const CONDITIONS: Record<ConditionKey, ConditionInfo> = {
     stress: 54,
     desc: 'Compromised pulmonary ventilation. SpO2 critical threshold breached (<90%). Rhythmic respiration amplitude restriction.',
     logs: [
-      'Alert: SpO2 dipped below nominal safety limit (89%)',
-      'Diagnostics: Bronchial resistance modeling high',
-      'Pulmonary: Respiration rate depressed (9 breaths/min)',
-      'System: Deployed auxiliary oxygen loop simulation',
-      'Status: Shallow chest wall excursion flagged'
+      'Telemetry stream integrity 99.6%',
+      'Scanner: Re-evaluating... Chronic Asthma parameters...',
+      'System Integrity: 99.8%',
+      'Diagnostics: Bronchial resistance modeling active',
+      'Status: Compromised pulmonary ventilation'
     ]
   },
   epilepsy: {
@@ -121,11 +122,11 @@ const CONDITIONS: Record<ConditionKey, ConditionInfo> = {
     stress: 91,
     desc: 'Severe paroxysmal electrical discharge in cerebral cortex. Chaotic high-amplitude spike-and-wave EEG activity.',
     logs: [
-      'CRITICAL: Cortical spike-and-wave discharges detected',
-      'Diagnostics: Synaptic firing synchrony breach (>8Hz)',
-      'Neurological: Right lobe motor cortex overloaded',
-      'Alert: Tonic-clonic tonic phase simulation active',
-      'System: Initiating automated neural stabilizer clamp'
+      'Telemetry stream integrity 99.6%',
+      'Scanner: Re-evaluating... Neurological Epilepsy parameters...',
+      'System Integrity: 99.8%',
+      'Diagnostics: Cerebral cortex electrical discharges active',
+      'Status: Critical neurological seizure alert'
     ]
   }
 }
@@ -139,20 +140,86 @@ interface Point3D {
 }
 
 export default function DigitalTwin() {
-  const [activeCondition, setActiveCondition] = useState<ConditionKey>('diabetes')
-  const liveBpm = useTelemetryStore((s) => s.liveTelemetryFrame.bpm)
-  const liveSpo2 = useTelemetryStore((s) => s.liveTelemetryFrame.oxygenSaturation)
-  const liveGlucose = useTelemetryStore((s) => s.liveTelemetryFrame.glucose)
+  const storeCondition = useTelemetryStore((s) => s.currentCondition)
+  const activeCondition = (['diabetes', 'arrhythmia', 'asthma', 'epilepsy'].includes(storeCondition) ? storeCondition : 'diabetes') as ConditionKey
+  // UI Render Throttling: Poll telemetry store at 2fps instead of reacting at 60fps
+  // This drastically improves DOM performance and prevents UI thread blocking
+  const [telemetry, setTelemetry] = useState({
+    liveBpm: 72,
+    liveSpo2: 98,
+    liveGlucose: 120
+  })
 
-  const [showDropdown, setShowDropdown] = useState(false)
+  const [anomalies, setAnomalies] = useState({
+    bpm: false,
+    spo2: false,
+    glucose: false
+  })
+
+  // Rolling buffers for Z-score anomaly prediction
+  const historyRef = useRef({
+    bpm: [] as number[],
+    spo2: [] as number[],
+    glucose: [] as number[]
+  })
+
+  useEffect(() => {
+    // Read the query parameter to link the Operator Track to a specific Medical Condition
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const condition = params.get('condition')
+      if (condition && ['diabetes', 'arrhythmia', 'asthma', 'epilepsy'].includes(condition)) {
+        useTelemetryStore.getState().setCurrentCondition(condition as any)
+      }
+    }
+
+    const updateUiInterval = setInterval(() => {
+      const state = useTelemetryStore.getState().liveTelemetryFrame
+      const bpm = Math.round(state.bpm)
+      const spo2 = Math.round(state.oxygenSaturation)
+      const glucose = Math.round(state.glucose)
+      
+      setTelemetry({ liveBpm: bpm, liveSpo2: spo2, liveGlucose: glucose })
+
+      // AI-adjacent Anomaly Detection (Rolling Z-Score)
+      const hist = historyRef.current
+      hist.bpm.push(bpm)
+      hist.spo2.push(spo2)
+      hist.glucose.push(glucose)
+
+      // Keep last 30 samples (~15 seconds rolling window)
+      if (hist.bpm.length > 30) hist.bpm.shift()
+      if (hist.spo2.length > 30) hist.spo2.shift()
+      if (hist.glucose.length > 30) hist.glucose.shift()
+
+      const checkAnomaly = (arr: number[], current: number) => {
+        if (arr.length < 10) return false // Wait for baseline to stabilize
+        const mean = arr.reduce((a, b) => a + b, 0) / arr.length
+        const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / arr.length
+        const std = Math.sqrt(variance) || 1
+        const zScore = Math.abs((current - mean) / std)
+        return zScore > 2.0 // Trigger prediction if drift is > 2.0 std deviations
+      }
+
+      setAnomalies({
+        bpm: checkAnomaly(hist.bpm, bpm),
+        spo2: checkAnomaly(hist.spo2, spo2),
+        glucose: checkAnomaly(hist.glucose, glucose)
+      })
+    }, 500)
+    return () => clearInterval(updateUiInterval)
+  }, [])
+
+  const { liveBpm, liveSpo2, liveGlucose } = telemetry
+
   const [audioEnabled, setAudioEnabled] = useState(false)
-  const [isRotating, setIsRotating] = useState(true)
-  const [wireframeMode, setWireframeMode] = useState<Readonly<'wireframe' | 'dots' | 'solid'>>('wireframe')
+  const wireframeMode = useTelemetryStore((s) => s.wireframeMode)
+  const setWireframeMode = useTelemetryStore((s) => s.setWireframeMode)
+
   const [sysTime, setSysTime] = useState('')
   const [tickerLogs, setTickerLogs] = useState<string[]>([])
   
   const audioCtxRef = useRef<AudioContext | null>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
   
   // Canvas Refs
   const hologramCanvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -169,17 +236,6 @@ export default function DigitalTwin() {
     }
     const timer = setInterval(updateTime, 45)
     return () => clearInterval(timer)
-  }, [])
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowDropdown(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
   // Initialize audio context
@@ -458,22 +514,6 @@ export default function DigitalTwin() {
       const condition = CONDITIONS[activeCondition]
       const themeColor = condition.hexColor
       
-      if (isRotating) {
-        if (activeCondition === 'epilepsy') {
-          // Chaotic high-speed rotation during seizure simulation
-          angleY += 0.045
-          angleX += Math.sin(Date.now() / 200) * 0.01
-        } else if (activeCondition === 'arrhythmia') {
-          // Fast jerky rotations
-          angleY += 0.025
-          angleX = 0.2 + Math.sin(Date.now() / 400) * 0.05
-        } else {
-          // Normal smooth rotation
-          angleY += 0.008
-          angleX = 0.25
-        }
-      }
-
       // Beat scale factor (pulsing organ simulation)
       let scalePulse = 1.0
       beatTimer += 0.03
@@ -707,7 +747,7 @@ export default function DigitalTwin() {
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [activeCondition, isRotating, wireframeMode])
+  }, [activeCondition, wireframeMode])
 
   // 2. BOTTOM GRAPHS: REAL-TIME MULTI-CHANNEL SCROLLING CANVAS
   useEffect(() => {
@@ -724,7 +764,6 @@ export default function DigitalTwin() {
 
     let writeIndex = 0
     let lastBeatTime = Date.now()
-
     const updateBuffer = () => {
       // Stream speed adjustments
       const condition = CONDITIONS[activeCondition]
@@ -736,93 +775,49 @@ export default function DigitalTwin() {
       
       let ecgVal = 0
       
-      // Generate cardiac ECG waveform structure
-      if (activeCondition === 'arrhythmia') {
-        // PVC / irregular heart beats
-        const localPhase = (elapsed / beatInterval) % 1.0
-        
-        if (localPhase < 0.08) {
-          // P Wave
-          ecgVal = Math.sin(localPhase * Math.PI / 0.08) * 0.15
-        } else if (localPhase >= 0.1 && localPhase < 0.14) {
-          // Q Wave drop
-          ecgVal = -0.2
-        } else if (localPhase >= 0.14 && localPhase < 0.2) {
-          // Massive R Spike
-          const progress = (localPhase - 0.14) / 0.06
-          ecgVal = Math.sin(progress * Math.PI) * 1.8
-        } else if (localPhase >= 0.2 && localPhase < 0.24) {
-          // S Drop
-          ecgVal = -0.4
-        } else if (localPhase >= 0.28 && localPhase < 0.44) {
-          // Elevated erratic T Wave
-          const progress = (localPhase - 0.28) / 0.16
-          ecgVal = Math.sin(progress * Math.PI) * 0.45
-        }
-        
-        // Add irregular muscle jitter
-        ecgVal += (Math.random() - 0.5) * 0.18
-        
-        if (elapsed >= beatInterval) {
-          lastBeatTime = now - (Math.random() * 80) // Jerky random interval offset
-          playPulseSound(580, 0.09, 0.04)
-        }
-      } else {
-        // Nominal ECG complex
-        const localPhase = elapsed / beatInterval
-        
-        if (localPhase < 0.08) {
-          ecgVal = Math.sin((localPhase / 0.08) * Math.PI) * 0.1
-        } else if (localPhase >= 0.10 && localPhase < 0.13) {
-          ecgVal = -0.15
-        } else if (localPhase >= 0.13 && localPhase < 0.18) {
-          const progress = (localPhase - 0.13) / 0.05
-          ecgVal = Math.sin(progress * Math.PI) * 1.5
-        } else if (localPhase >= 0.18 && localPhase < 0.21) {
-          ecgVal = -0.3
-        } else if (localPhase >= 0.26 && localPhase < 0.38) {
-          const progress = (localPhase - 0.26) / 0.12
-          ecgVal = Math.sin(progress * Math.PI) * 0.25
-        }
-
-        if (elapsed >= beatInterval) {
-          lastBeatTime = now
-          // Beep chime sync
-          playPulseSound(600, 0.08, 0.03)
-        }
+      // Generate cardiac ECG waveform structure - Arrhythmic irregular beats under crisis
+      const localPhase = (elapsed / beatInterval) % 1.0
+      
+      if (localPhase < 0.08) {
+        // P Wave
+        ecgVal = Math.sin(localPhase * Math.PI / 0.08) * 0.15
+      } else if (localPhase >= 0.1 && localPhase < 0.14) {
+        // Q Wave drop
+        ecgVal = -0.2
+      } else if (localPhase >= 0.14 && localPhase < 0.2) {
+        // Massive R Spike
+        const progress = (localPhase - 0.14) / 0.06
+        ecgVal = Math.sin(progress * Math.PI) * 1.8
+      } else if (localPhase >= 0.2 && localPhase < 0.24) {
+        // S Drop
+        ecgVal = -0.4
+      } else if (localPhase >= 0.28 && localPhase < 0.44) {
+        // Elevated erratic T Wave
+        const progress = (localPhase - 0.28) / 0.16
+        ecgVal = Math.sin(progress * Math.PI) * 0.45
+      }
+      
+      // Add irregular muscle jitter
+      ecgVal += (Math.random() - 0.5) * 0.18
+      
+      if (elapsed >= beatInterval) {
+        lastBeatTime = now - (Math.random() * 80) // Jerky random interval offset
+        playPulseSound(580, 0.09, 0.04)
       }
 
-      // Brain wave EEG activity
-      let eegVal = 0
-      if (activeCondition === 'epilepsy') {
-        // High frequency erratic spike discharges
-        eegVal = Math.sin(now * 0.08) * 0.8 + Math.cos(now * 0.22) * 0.6
-        if (Math.random() > 0.7) {
-          eegVal += (Math.random() > 0.5 ? 1.4 : -1.4) // massive spike amplitude
-        }
-      } else if (activeCondition === 'diabetes') {
-        // Steady state relaxed Alpha rhythms (8-12Hz)
-        eegVal = Math.sin(now * 0.035) * 0.15 + Math.cos(now * 0.015) * 0.1
-      } else {
-        // Standard background rhythm
-        eegVal = Math.sin(now * 0.05) * 0.25 + (Math.random() - 0.5) * 0.1
+      // Brain wave EEG activity - High frequency chaotic neural discharges
+      let eegVal = Math.sin(now * 0.08) * 0.8 + Math.cos(now * 0.22) * 0.6
+      if (Math.random() > 0.7) {
+        eegVal += (Math.random() > 0.5 ? 1.4 : -1.4) // massive spike amplitude
       }
 
-      // Respiration pulmonary waves (RESP)
-      let respVal = 0
-      const respHz = condition.resp / 60
+      // Respiration pulmonary waves (RESP) - Shallow hyperventilation compensation
+      const respHz = 18 / 60
       const respPeriod = 1000 / respHz
       const respPhase = (now % respPeriod) / respPeriod
-
-      if (activeCondition === 'asthma') {
-        // Shallow, restricted ventilation cycles
-        respVal = Math.sin(respPhase * Math.PI * 2) * 0.3
-        if (respPhase > 0.4 && respPhase < 0.6) {
-          respVal -= 0.15 // gasping dip
-        }
-      } else {
-        // Beautiful calm sinus ventilation
-        respVal = Math.sin(respPhase * Math.PI * 2) * 0.8
+      let respVal = Math.sin(respPhase * Math.PI * 2) * 0.3
+      if (respPhase > 0.4 && respPhase < 0.6) {
+        respVal -= 0.15 // gasping dip
       }
 
       ecgBuffer[writeIndex] = ecgVal
@@ -847,7 +842,6 @@ export default function DigitalTwin() {
       
       const numChannels = 3
       const channelHeight = height / numChannels
-      const condition = CONDITIONS[activeCondition]
 
       // Update values
       for (let step = 0; step < 2; step++) {
@@ -858,9 +852,9 @@ export default function DigitalTwin() {
       const stepX = width / bufferSize
 
       const channelParams = [
-        { name: 'CH-1 ECG (Cardiac)', buffer: ecgBuffer, color: '#ff2b56', scale: 0.28 },
-        { name: 'CH-2 EEG (Brainwave)', buffer: eegBuffer, color: '#c040ff', scale: 0.35 },
-        { name: 'CH-3 RESP (Pulmonary)', buffer: respBuffer, color: '#00ccff', scale: 0.35 }
+        { name: 'CH-1 ECG (Myocardial Stress)', buffer: ecgBuffer, color: '#ff2b56', scale: 0.28 },
+        { name: 'CH-2 EEG (Neural Cortex)', buffer: eegBuffer, color: '#c040ff', scale: 0.35 },
+        { name: 'CH-3 RESP (Pulmonary Rate)', buffer: respBuffer, color: '#00ccff', scale: 0.35 }
       ]
 
       channelParams.forEach((ch, chIdx) => {
@@ -889,7 +883,7 @@ export default function DigitalTwin() {
         // Draw waveform path
         ctx.beginPath()
         ctx.lineWidth = 1.5
-        ctx.strokeStyle = activeCondition === 'diabetes' ? '#ff9900' : ch.color
+        ctx.strokeStyle = ch.color
         
         let pathStarted = false
         for (let i = 0; i < bufferSize; i++) {
@@ -908,7 +902,7 @@ export default function DigitalTwin() {
         ctx.stroke()
 
         // Add a sweeping playhead marker dot at the right end
-        ctx.fillStyle = activeCondition === 'diabetes' ? '#ff9900' : ch.color
+        ctx.fillStyle = ch.color
         ctx.shadowBlur = 4
         ctx.shadowColor = ctx.fillStyle
         ctx.beginPath()
@@ -929,82 +923,65 @@ export default function DigitalTwin() {
   }, [activeCondition, playPulseSound])
 
   return (
-    <div className="min-h-screen bg-[#050807] text-slate-100 font-sans flex flex-col scanlines relative overflow-hidden select-none">
+    <div className="min-h-screen bg-[#050807] text-slate-100 font-sans flex flex-col relative overflow-hidden">
       
       {/* Top Banner Header */}
-      <header className="h-16 border-b border-white/5 bg-[#050807]/90 backdrop-blur-md px-6 flex items-center justify-between z-10">
-        <a href="/" className="flex items-center gap-3 hover:opacity-85 transition-opacity cursor-pointer">
-          <div className="w-8 h-8 rounded border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center animate-pulse">
-            <Cpu className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div>
-            <h1 className="text-sm font-semibold tracking-wider font-mono text-emerald-400 uppercase">
-              S.P.H.E.R.E. // Digital Twin
-            </h1>
-            <p className="text-[9px] text-slate-500 tracking-widest font-mono">
-              SYNAPSE NEURAL TELEMETRY LINK v4.0.1
-            </p>
-          </div>
-        </a>
-
-        {/* Global States */}
-        <div className="hidden md:flex items-center gap-6 font-mono text-[10px]">
-          <div className="flex items-center gap-2 border-r border-white/5 pr-6">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-            <span className="text-slate-400">LINK NODE:</span>
-            <span className="text-emerald-400 font-semibold">ONLINE</span>
-          </div>
-          
-          <div className="flex items-center gap-2 border-r border-white/5 pr-6">
-            <span className="text-slate-400">SYS TIME:</span>
-            <span className="text-emerald-400 font-semibold">{sysTime || '00:00:00.000'}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">CONDITION:</span>
-            <span className={`font-semibold uppercase ${
-              CONDITIONS[activeCondition].status === 'NOMINAL' ? 'text-emerald-400' :
-              CONDITIONS[activeCondition].status === 'WARNING' ? 'text-amber-400' : 'text-red-500'
-            }`}>
-              {CONDITIONS[activeCondition].name}
-            </span>
-          </div>
-        </div>
-
-        {/* Action Controls */}
-        <div className="flex items-center gap-3">
-          {/* Audio toggle button */}
-          <button
-            onClick={toggleAudio}
-            className={`w-9 h-9 rounded border flex items-center justify-center transition-all duration-200 cursor-pointer ${
-              audioEnabled
-                ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400 glow-accent'
-                : 'border-white/5 bg-white/2 text-slate-500 hover:border-white/15'
-            }`}
-            title="Toggle heart beep/chimes audio"
-          >
-            {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-          </button>
-
-          {/* Navigation link */}
-          <a 
-            href="/" 
-            className="flex items-center gap-2 px-3 py-1.5 rounded border border-emerald-500/20 hover:border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 text-xs text-emerald-400 hover:text-emerald-300 font-mono transition-all duration-200 cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.05)]"
+      <header className="h-16 border-b border-white/5 bg-[#050807]/90 backdrop-blur-md px-6 flex items-center justify-between relative z-50">
+        
+        {/* Left Side: Back Navigation */}
+        <a href="/?onboarded=true" className="inline-flex shrink-0" style={{ pointerEvents: 'auto' }}>
+          <span 
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-emerald-500/20 hover:border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 text-[9px] font-mono font-bold tracking-widest text-emerald-400 hover:text-emerald-300 transition-all duration-200 cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            TELEMETRY HUD
-          </a>
+            S.P.H.E.R.E. TELE-ROBOTIC SURGERY CONTROL MATRIX
+          </span>
+        </a>
+
+        {/* Center/Right: Title and Global States */}
+        <div className="flex items-center gap-6">
+          <div className="hidden xl:flex items-center gap-3">
+            <div className="w-8 h-8 rounded border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center animate-pulse">
+              <Cpu className="w-4 h-4 text-emerald-400" />
+            </div>
+            <h1 className="text-sm font-semibold tracking-wider font-mono text-emerald-400 uppercase">
+              DIGITAL TWIN SYNAPSE LINK v4.0.1
+            </h1>
+          </div>
+
+          <div className="hidden md:flex items-center gap-6 font-mono text-[10px]">
+            <div className="flex items-center gap-2 border-r border-white/5 pr-6">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+              <span className="text-slate-400">LINK NODE:</span>
+              <span className="text-emerald-400 font-semibold">ONLINE</span>
+            </div>
+            
+            <div className="flex items-center gap-2 border-r border-white/5 pr-6">
+              <span className="text-slate-400">SYS TIME:</span>
+              <span className="text-emerald-400 font-semibold">{sysTime || '00:00:00.000'}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">CONDITION:</span>
+              <span className={`font-semibold uppercase ${
+                CONDITIONS[activeCondition].status === 'NOMINAL' ? 'text-emerald-400' :
+                CONDITIONS[activeCondition].status === 'WARNING' ? 'text-amber-400' : 'text-red-500'
+              }`}>
+                {CONDITIONS[activeCondition].name}
+              </span>
+            </div>
+          </div>
         </div>
       </header>
 
       {/* Main Grid Layout */}
       <main className="flex-1 p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 overflow-hidden min-h-0">
         
-        {/* Left Sidebar - Patient Demographics & Condition Select */}
+        {/* Left Sidebar - Patient Demographics & Vitals Monitor */}
         <section className="lg:col-span-1 flex flex-col gap-4 overflow-y-auto">
           
           {/* Patient Profile Card */}
-          <div className="p-4 rounded border border-white/5 bg-[#080d0a]/80 backdrop-blur-md relative overflow-hidden flex flex-col gap-4">
+          <div className="glass-panel p-4 rounded relative overflow-hidden flex flex-col gap-4">
             <div className="absolute top-0 right-0 p-3 opacity-15">
               <User className="w-16 h-16 text-emerald-400" />
             </div>
@@ -1016,7 +993,7 @@ export default function DigitalTwin() {
                 <div className="absolute inset-x-0 h-0.5 bg-emerald-400/60 shadow-[0_0_8px_#00ffaa] animate-bounce top-1/2"></div>
               </div>
               <div>
-                <h2 className="text-sm font-semibold font-mono tracking-wider text-slate-200">PATIENT ID: TWIN-908</h2>
+                <h2 className="text-sm font-semibold font-mono tracking-wider text-slate-200">PATIENT ID: TWIN-988</h2>
                 <span className="text-[10px] text-emerald-500/80 font-mono tracking-widest uppercase">CLASSIFIED SUBJECT</span>
               </div>
             </div>
@@ -1028,7 +1005,7 @@ export default function DigitalTwin() {
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-slate-500">BLOOD TYPE:</span>
-                <span className="text-slate-300">O-NEGATIVE</span>
+                <span className="text-slate-300">0-NEGATIVE</span>
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-slate-500">HEIGHT / WT:</span>
@@ -1041,50 +1018,13 @@ export default function DigitalTwin() {
             </div>
           </div>
 
-          {/* Condition Dropdown Selector */}
-          <div ref={dropdownRef} className="relative">
-            <label className="block text-[10px] font-mono text-slate-500 tracking-wider mb-1.5">
-              ACTIVE PATHOLOGY TARGET
-            </label>
-            <button
-              onClick={() => setShowDropdown(prev => !prev)}
-              className="w-full flex items-center justify-between px-3 py-2 text-xs font-mono border border-emerald-500/20 bg-emerald-500/5 hover:border-emerald-500/40 rounded transition-all duration-150 cursor-pointer text-emerald-400 font-semibold"
-            >
-              <span className="flex items-center gap-2">
-                <Activity className="w-3.5 h-3.5" />
-                {CONDITIONS[activeCondition].name}
-              </span>
-              <Sliders className="w-3.5 h-3.5" />
-            </button>
-
-            {showDropdown && (
-              <div className="absolute top-[105%] left-0 right-0 border border-white/10 bg-[#080d0a] shadow-[0_4px_24px_rgba(0,0,0,0.8)] rounded overflow-hidden z-20">
-                {(Object.keys(CONDITIONS) as ConditionKey[]).map(key => (
-                  <button
-                    key={key}
-                    onClick={() => {
-                      setActiveCondition(key)
-                      useTelemetryStore.getState().setCurrentCondition(key)
-                      setShowDropdown(false)
-                    }}
-                    className={`w-full text-left px-3 py-2 text-xs font-mono transition-colors hover:bg-emerald-500/10 cursor-pointer flex items-center justify-between ${
-                      activeCondition === key ? 'text-emerald-400 bg-emerald-500/5 font-semibold' : 'text-slate-400'
-                    }`}
-                  >
-                    {CONDITIONS[key].name}
-                    {CONDITIONS[key].status === 'CRISIS' && (
-                      <span className="text-[8px] bg-red-950/60 border border-red-500/30 text-red-500 px-1 py-0.5 rounded font-bold uppercase">CRISIS</span>
-                    )}
-                    {CONDITIONS[key].status === 'WARNING' && (
-                      <span className="text-[8px] bg-amber-950/60 border border-amber-500/30 text-amber-500 px-1 py-0.5 rounded font-bold uppercase">WARN</span>
-                    )}
-                    {CONDITIONS[key].status === 'NOMINAL' && (
-                      <span className="text-[8px] bg-emerald-950/60 border border-emerald-500/30 text-emerald-500 px-1 py-0.5 rounded font-bold uppercase">NOMINAL</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
+          {/* System Status (Static Title Card) */}
+          <div className="p-3 rounded border border-amber-500/25 bg-amber-500/5 text-amber-400 font-mono flex flex-col gap-1 shadow-[inset_0_0_12px_rgba(245,158,11,0.05)]">
+            <span className="text-[9px] text-slate-500 tracking-wider uppercase font-semibold">SYSTEM STATUS</span>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide">
+              <Activity className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+              METABOLIC MONITORING // DIABETIC GLUCOSE SPIKE
+            </div>
           </div>
 
           {/* Condition Description */}
@@ -1096,10 +1036,17 @@ export default function DigitalTwin() {
           {/* Core Telemetry Metrics */}
           <div className="grid grid-cols-2 gap-3 flex-1 lg:flex-initial">
             {/* BPM */}
-            <div className="p-3 rounded border border-white/5 bg-[#080d0a]/80 backdrop-blur-sm flex flex-col justify-between min-h-[75px]">
+            <div className={`glass-panel p-3 rounded flex flex-col justify-between min-h-[75px] relative transition-all duration-300 ${
+              anomalies.bpm ? '!border-amber-500 !shadow-[inset_0_0_20px_rgba(245,158,11,0.2)]' : ''
+            }`}>
+              {anomalies.bpm && (
+                <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-1.5 py-0.5 rounded text-[7px] font-bold tracking-widest animate-pulse whitespace-nowrap">
+                  ANOMALY PREDICTED
+                </div>
+              )}
               <div className="flex items-center justify-between text-slate-500 font-mono text-[9px]">
                 <span>HEART RATE</span>
-                <Heart className={`w-3.5 h-3.5 ${activeCondition === 'arrhythmia' ? 'text-red-500 animate-ping' : 'text-emerald-400'}`} />
+                <Heart className={`w-3.5 h-3.5 ${activeCondition === 'arrhythmia' ? 'text-red-500 animate-ping' : anomalies.bpm ? 'text-amber-500 animate-pulse' : 'text-emerald-400'}`} />
               </div>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-bold font-mono text-slate-100">
@@ -1113,10 +1060,17 @@ export default function DigitalTwin() {
             </div>
 
             {/* SpO2 */}
-            <div className="p-3 rounded border border-white/5 bg-[#080d0a]/80 backdrop-blur-sm flex flex-col justify-between min-h-[75px]">
+            <div className={`glass-panel p-3 rounded flex flex-col justify-between min-h-[75px] relative transition-all duration-300 ${
+              anomalies.spo2 ? '!border-amber-500 !shadow-[inset_0_0_20px_rgba(245,158,11,0.2)]' : ''
+            }`}>
+              {anomalies.spo2 && (
+                <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-1.5 py-0.5 rounded text-[7px] font-bold tracking-widest animate-pulse whitespace-nowrap">
+                  ANOMALY PREDICTED
+                </div>
+              )}
               <div className="flex items-center justify-between text-slate-500 font-mono text-[9px]">
                 <span>BLOOD OXYGEN</span>
-                <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                <Activity className={`w-3.5 h-3.5 ${anomalies.spo2 ? 'text-amber-500 animate-pulse' : 'text-emerald-400'}`} />
               </div>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className={`text-xl font-bold font-mono ${
@@ -1132,7 +1086,7 @@ export default function DigitalTwin() {
             </div>
 
             {/* Respiration */}
-            <div className="p-3 rounded border border-white/5 bg-[#080d0a]/80 backdrop-blur-sm flex flex-col justify-between min-h-[75px]">
+            <div className="glass-panel p-3 rounded flex flex-col justify-between min-h-[75px]">
               <div className="flex items-center justify-between text-slate-500 font-mono text-[9px]">
                 <span>RESPIRATION</span>
                 <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
@@ -1149,10 +1103,17 @@ export default function DigitalTwin() {
             </div>
 
             {/* Blood Glucose */}
-            <div className="p-3 rounded border border-white/5 bg-[#080d0a]/80 backdrop-blur-sm flex flex-col justify-between min-h-[75px]">
+            <div className={`glass-panel p-3 rounded flex flex-col justify-between min-h-[75px] relative transition-all duration-300 ${
+              anomalies.glucose ? '!border-amber-500 !shadow-[inset_0_0_20px_rgba(245,158,11,0.2)]' : ''
+            }`}>
+              {anomalies.glucose && (
+                <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-1.5 py-0.5 rounded text-[7px] font-bold tracking-widest animate-pulse whitespace-nowrap">
+                  ANOMALY PREDICTED
+                </div>
+              )}
               <div className="flex items-center justify-between text-slate-500 font-mono text-[9px]">
                 <span>BLOOD GLUCOSE</span>
-                <Shield className={`w-3.5 h-3.5 ${liveGlucose > 200 ? 'text-amber-500 animate-pulse' : 'text-emerald-400'}`} />
+                <Shield className={`w-3.5 h-3.5 ${liveGlucose > 200 ? 'text-amber-500 animate-pulse' : anomalies.glucose ? 'text-amber-500 animate-pulse' : 'text-emerald-400'}`} />
               </div>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className={`text-xl font-bold font-mono ${
@@ -1189,19 +1150,7 @@ export default function DigitalTwin() {
             </div>
 
             {/* Viewport Action Controls (Top Right) */}
-            <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
-              {/* Rotation toggle */}
-              <button
-                onClick={() => setIsRotating(prev => !prev)}
-                className={`px-2 py-1 text-[9px] font-mono rounded border flex items-center gap-1.5 cursor-pointer transition-all ${
-                  isRotating
-                    ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400'
-                    : 'border-white/10 bg-black/40 text-slate-500'
-                }`}
-              >
-                <RefreshCw className={`w-2.5 h-2.5 ${isRotating ? 'animate-spin' : ''}`} />
-                ROTATION
-              </button>
+            <div className="absolute top-4 right-4 flex items-center gap-2 z-20" style={{ pointerEvents: 'auto' }}>
 
               {/* Wireframe switch */}
               <div className="bg-black/60 border border-white/10 rounded p-0.5 flex gap-0.5">
@@ -1224,48 +1173,6 @@ export default function DigitalTwin() {
             {/* 3D WebGL/Canvas */}
             <div className="flex-1 min-h-0 w-full relative">
               <DigitalTwinScene currentCondition={activeCondition} />
-
-              {/* Floating Conditions Selector Overlay (Top Right) */}
-              <div className="absolute top-4 right-4 z-10 w-44 p-3 rounded border border-white/10 bg-[#080d0a]/90 backdrop-blur-md font-mono flex flex-col gap-2.5 shadow-[0_4px_24px_rgba(0,0,0,0.8)] animate-fade-in">
-                <div className="flex flex-col gap-0.5 border-b border-white/5 pb-2">
-                  <span className="text-[9px] text-slate-500 font-semibold uppercase">USER ID: P89123</span>
-                  <span className="text-[10px] font-bold text-emerald-400 tracking-wider">CONDITIONS</span>
-                </div>
-                <div className="flex flex-col gap-2">
-                  {(Object.keys(CONDITIONS) as ConditionKey[]).map((key) => {
-                    const cond = CONDITIONS[key]
-                    const isActive = activeCondition === key
-                    let btnColor = 'border-red-500/30 text-red-500 hover:bg-red-500/10'
-                    let activeBtnColor = 'border-red-500 bg-red-500/20 text-red-400 font-semibold shadow-[0_0_8px_rgba(239,68,68,0.2)]'
-                    if (key === 'asthma') {
-                      btnColor = 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
-                      activeBtnColor = 'border-cyan-500 bg-cyan-500/20 text-cyan-300 font-semibold shadow-[0_0_8px_rgba(6,182,212,0.2)]'
-                    } else if (key === 'diabetes') {
-                      btnColor = 'border-amber-500/30 text-amber-500 hover:bg-amber-500/10'
-                      activeBtnColor = 'border-amber-500 bg-amber-500/20 text-amber-400 font-semibold shadow-[0_0_8px_rgba(245,158,11,0.2)]'
-                    } else if (key === 'epilepsy') {
-                      btnColor = 'border-fuchsia-500/30 text-fuchsia-500 hover:bg-fuchsia-500/10'
-                      activeBtnColor = 'border-fuchsia-500 bg-fuchsia-500/20 text-fuchsia-400 font-semibold shadow-[0_0_8px_rgba(217,70,239,0.2)]'
-                    }
-
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => {
-                          setActiveCondition(key)
-                          useTelemetryStore.getState().setCurrentCondition(key)
-                        }}
-                        className={`w-full py-1.5 px-2.5 text-[9px] text-left border rounded transition-all duration-150 cursor-pointer flex items-center justify-between uppercase tracking-wider ${
-                          isActive ? activeBtnColor : btnColor
-                        }`}
-                      >
-                        <span>{key === 'arrhythmia' ? 'Arrhythmia' : key === 'asthma' ? 'Asthma' : key === 'diabetes' ? 'Diabetes' : 'Epilepsy'}</span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
             </div>
 
             {/* Viewport Info Overlay (Bottom Left) */}
@@ -1288,46 +1195,9 @@ export default function DigitalTwin() {
 
         {/* Right Sidebar - System Activity Log & Controls */}
         <section className="lg:col-span-1 flex flex-col gap-4 overflow-y-auto">
-          
-          {/* Quick Actions Panel */}
-          <div className="p-4 rounded border border-white/5 bg-[#080d0a]/80 backdrop-blur-md flex flex-col gap-3">
-            <h3 className="text-xs font-mono font-semibold tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-white/5 pb-2">
-              <Settings className="w-3.5 h-3.5 text-emerald-500" />
-              INTEGRATION CONTROLS
-            </h3>
-            
-            <button
-              onClick={() => {
-                // Play calibration beep
-                if (audioEnabled) {
-                  playPulseSound(1200, 0.25, 0.05)
-                }
-                const oldLog = tickerLogs
-                setTickerLogs(['Calibration initiated...', 'Node pinging... SUCCESS', ...oldLog])
-              }}
-              className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-400 font-mono text-[10px] font-semibold tracking-widest uppercase rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-1.5"
-            >
-              <Zap className="w-3 h-3" />
-              RECALIBRATE NODES
-            </button>
 
-            <button
-              onClick={() => {
-                setActiveCondition('diabetes')
-                useTelemetryStore.getState().setCurrentCondition('diabetes')
-                if (audioEnabled) {
-                  playPulseSound(440, 0.4, 0.08)
-                }
-              }}
-              className="w-full py-2 bg-white/2 hover:bg-white/5 border border-white/10 hover:border-white/20 text-slate-400 font-mono text-[10px] font-semibold tracking-widest uppercase rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-1.5"
-            >
-              <RotateCcw className="w-3 h-3" />
-              RESET BASELINE
-            </button>
-          </div>
-
-          {/* Neural Network Stress Meter */}
-          <div className="p-4 rounded border border-white/5 bg-[#080d0a]/80 backdrop-blur-md flex flex-col gap-2">
+          {/* Neural Network Stress Meter (Right, Center) */}
+          <div className="glass-panel p-4 rounded flex flex-col gap-2">
             <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
               <span>NEURAL NODE STRESS INDEX</span>
               <span className={`font-semibold ${
@@ -1355,8 +1225,8 @@ export default function DigitalTwin() {
             </span>
           </div>
 
-          {/* System Ticker Activity Logs */}
-          <div className="flex-1 min-h-[150px] p-4 rounded border border-white/5 bg-[#080d0a]/80 backdrop-blur-md flex flex-col gap-2 overflow-hidden">
+          {/* System Ticker Activity Logs (Right, Lower) */}
+          <div className="glass-panel flex-1 min-h-[150px] p-4 rounded flex flex-col gap-2 overflow-hidden">
             <h3 className="text-xs font-mono font-semibold tracking-wider text-slate-300 flex items-center gap-1.5 border-b border-white/5 pb-2">
               <FileText className="w-3.5 h-3.5 text-emerald-500" />
               SYNAPSE LOGGER
@@ -1367,9 +1237,9 @@ export default function DigitalTwin() {
                 <div key={idx} className="flex gap-2 leading-tight border-b border-white/[0.02] pb-1 animate-fade-in">
                   <span className="text-emerald-500/60 font-semibold select-none">&gt;</span>
                   <span className={
-                    log.includes('CRITICAL') || log.includes('WARNING') || log.includes('Alert')
+                    log.includes('CRITICAL') || log.includes('WARNING') || log.includes('Alert') || log.includes('Crisis') || log.includes('instability')
                       ? 'text-red-400' 
-                      : log.includes('SUCCESS') || log.includes('confirmed') 
+                      : log.includes('SUCCESS') || log.includes('integrity') || log.includes('calibrated')
                       ? 'text-emerald-400/80' 
                       : 'text-slate-400'
                   }>
@@ -1378,6 +1248,50 @@ export default function DigitalTwin() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Integration Controls (Right, Bottom) */}
+          <div className="glass-panel p-4 rounded flex flex-col gap-2.5">
+            <button
+              onClick={() => {
+                if (audioEnabled) {
+                  playPulseSound(1200, 0.25, 0.05)
+                }
+                const oldLog = tickerLogs
+                setTickerLogs(['Calibration initiated...', 'Node pinging... SUCCESS', ...oldLog])
+              }}
+              className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-400 font-mono text-[10px] font-semibold tracking-widest uppercase rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-1.5"
+            >
+              <Zap className="w-3 h-3" />
+              RECALIBRATE NODES
+            </button>
+
+            <button
+              onClick={() => {
+                useTelemetryStore.getState().setCurrentCondition('diabetes')
+                if (audioEnabled) {
+                  playPulseSound(440, 0.4, 0.08)
+                }
+              }}
+              className="w-full py-2 bg-white/2 hover:bg-white/5 border border-white/10 hover:border-white/20 text-slate-400 font-mono text-[10px] font-semibold tracking-widest uppercase rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-1.5"
+            >
+              <RotateCcw className="w-3 h-3" />
+              RESET BASELINE
+            </button>
+
+            <button
+              onClick={() => {
+                useTelemetryStore.getState().setCustomZoomTarget(null)
+                useTelemetryStore.getState().setSelectedOrgan('none')
+                if (audioEnabled) {
+                  playPulseSound(600, 0.3, 0.05)
+                }
+              }}
+              className="w-full py-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 hover:border-blue-500/50 text-blue-400 font-mono text-[10px] font-semibold tracking-widest uppercase rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-1.5"
+            >
+              <Eye className="w-3 h-3" />
+              RECALIBRATE VIEW
+            </button>
           </div>
 
         </section>

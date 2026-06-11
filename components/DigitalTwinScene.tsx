@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useRef, useEffect, useState, useMemo } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Html, Line } from '@react-three/drei'
 import * as THREE from 'three'
 import { useTelemetryStore } from '@/lib/useTelemetryStore'
+import { AlertTriangle, Heart, Activity, Brain, Shield } from 'lucide-react'
 
 interface DigitalTwinSceneProps {
   currentCondition: 'diabetes' | 'arrhythmia' | 'asthma' | 'epilepsy'
@@ -97,10 +98,33 @@ function HudPointerLine({ start, mid, end, color, active }: { start: [number, nu
 // Hyperrealistic Mannequin Physical Glass Skin Contours
 // ─────────────────────────────────────────────────────────────────────────────
 function HumanGlassSkin() {
-  const glassColor = '#00a3ff'
+  const glassColor = '#ffffff'
+  const { camera } = useThree()
 
   return (
-    <group>
+    <group 
+      onClick={(e) => { 
+        e.stopPropagation()
+        
+        // Don't override if an organ was clicked (organ clicks are handled in their own groups)
+        const p = e.point
+        
+        // The safest way to zoom is to move the camera closer along the horizontal plane to the clicked point
+        const dir = camera.position.clone().sub(p)
+        dir.y = 0 // Flatten the Y axis so the camera stays perfectly level with the clicked point
+        dir.normalize()
+        if (dir.lengthSq() === 0) dir.set(0, 0, 1)
+        
+        // Place the camera 0.8 units away from the clicked point
+        const camPos = p.clone().add(dir.multiplyScalar(0.8))
+        
+        useTelemetryStore.getState().setCustomZoomTarget({ 
+          pos: [camPos.x, camPos.y, camPos.z], 
+          target: [p.x, p.y, p.z] 
+        })
+        useTelemetryStore.getState().setSelectedOrgan('custom')
+      }}
+    >
       {/* Outer Skin Head Hull */}
       <mesh position={[0, 1.4, 0]} scale={[1.02, 1.14, 1.02]}>
         <sphereGeometry args={[0.33, 24, 24]} />
@@ -271,8 +295,374 @@ function DetailedSkeleton() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pulsing Vascular Arterial Line Component
+// ─────────────────────────────────────────────────────────────────────────────
+function PulsingVascularLine({ points, color, baseWidth = 0.8, baseOpacity = 0.6 }: { points: [number, number, number][]; color: string; baseWidth?: number; baseOpacity?: number }) {
+  const lineRef = useRef<any>(null)
+  useFrame((state) => {
+    if (lineRef.current && lineRef.current.material) {
+      const elapsed = state.clock.getElapsedTime()
+      lineRef.current.material.linewidth = baseWidth * (1.2 + Math.sin(elapsed * 5.0) * 0.4)
+      lineRef.current.material.opacity = baseOpacity * (0.7 + Math.sin(elapsed * 5.0) * 0.3)
+    }
+  })
+  return (
+    <Line
+      ref={lineRef}
+      points={points}
+      color={color}
+      lineWidth={baseWidth}
+      transparent
+      opacity={baseOpacity}
+      blending={THREE.AdditiveBlending}
+    />
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hyperrealistic Procedural Heart & Aorta Components
+// ─────────────────────────────────────────────────────────────────────────────
+const ProceduralHeart = React.forwardRef<THREE.Mesh, { color: THREE.Color, emissiveIntensity: number }>((props, ref) => {
+  const { color, emissiveIntensity } = props
+  const materialRef = useRef<THREE.MeshStandardMaterial>(null)
+  
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uContraction: { value: 0 }
+  }), [])
+
+  useFrame((state, delta) => {
+    uniforms.uTime.value = state.clock.elapsedTime
+    // The parent controls the basic scale to match BPM, but we add high-frequency contraction
+    const phase = (state.clock.elapsedTime % (60 / useTelemetryStore.getState().liveTelemetryFrame.bpm)) / (60 / useTelemetryStore.getState().liveTelemetryFrame.bpm)
+    uniforms.uContraction.value = phase < 0.15 ? Math.sin((phase / 0.15) * Math.PI) : 0.0
+    
+    if (materialRef.current) {
+      materialRef.current.emissiveIntensity = emissiveIntensity
+      materialRef.current.color.copy(color)
+      materialRef.current.emissive.copy(color)
+    }
+  })
+
+  // Shader to morph a sphere into a heart shape with beating ventricles
+  const onBeforeCompile = (shader: any) => {
+    shader.uniforms.uTime = uniforms.uTime
+    shader.uniforms.uContraction = uniforms.uContraction
+    
+    shader.vertexShader = `
+      uniform float uTime;
+      uniform float uContraction;
+      ${shader.vertexShader}
+    `.replace(
+      `#include <begin_vertex>`,
+      `
+      vec3 p = position;
+      // Morph sphere into heart shape roughly
+      float x = p.x;
+      float y = p.y;
+      float z = p.z;
+      
+      // Basic cardioid-like distortion on Y axis
+      y -= abs(x) * 0.4;
+      
+      // Aorta bulge at top
+      if (y > 0.5) {
+        x += sin(y * 10.0) * 0.1;
+      }
+      
+      // Ventricle contraction (pinch inward based on beat phase)
+      // Lower half pinches more than upper half
+      float pinch = uContraction * smoothstep(0.5, -1.0, y) * 0.3;
+      p.x = x * (1.0 - pinch);
+      p.y = y;
+      p.z = z * (1.0 - pinch * 0.5); // Less pinch on Z
+      
+      // Organic surface noise
+      float noise = sin(p.x * 20.0 + uTime) * sin(p.y * 20.0) * sin(p.z * 20.0) * 0.015;
+      p += normal * noise;
+      
+      vec3 transformed = p;
+      `
+    )
+  }
+
+  return (
+    <mesh ref={ref} rotation={[0.15, 0, 0.2]}>
+      <sphereGeometry args={[0.13, 64, 64]} />
+      <meshStandardMaterial
+        ref={materialRef}
+        transparent
+        opacity={0.8}
+        roughness={0.4}
+        metalness={0.3}
+        blending={THREE.AdditiveBlending}
+        onBeforeCompile={onBeforeCompile}
+      />
+    </mesh>
+  )
+})
+
+function AortaTube() {
+  const curve = useMemo(() => {
+    return new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.1, 0),
+      new THREE.Vector3(0.02, 0.18, 0.05),
+      new THREE.Vector3(-0.04, 0.25, -0.02),
+      new THREE.Vector3(-0.1, 0.22, -0.05),
+      new THREE.Vector3(-0.1, 0.15, -0.05)
+    ])
+  }, [])
+
+  const uniforms = useMemo(() => ({
+    uPulsePhase: { value: 0 }
+  }), [])
+
+  useFrame((state) => {
+    const elapsed = state.clock.elapsedTime
+    const bpm = useTelemetryStore.getState().liveTelemetryFrame.bpm
+    const beatDuration = 60 / bpm
+    // Phase 0 to 1 over the beat duration
+    uniforms.uPulsePhase.value = (elapsed % beatDuration) / beatDuration
+  })
+
+  const onBeforeCompile = (shader: any) => {
+    shader.uniforms.uPulsePhase = uniforms.uPulsePhase
+    shader.vertexShader = `
+      uniform float uPulsePhase;
+      ${shader.vertexShader}
+    `.replace(
+      `#include <begin_vertex>`,
+      `
+      vec3 transformed = position;
+      // uv.x goes from 0 to 1 along the tube
+      // Create a localized bulge that travels from 0 to 1 based on phase
+      // Delay the pulse slightly so it starts right after the heart contracts (phase ~0.15)
+      float wavePos = (uPulsePhase - 0.1) * 1.5; 
+      float dist = abs(uv.x - wavePos);
+      float bulge = exp(-dist * dist * 30.0) * 0.4; // Localized bump
+      
+      // Expand along normal
+      transformed += normal * bulge * smoothstep(0.0, 0.1, uv.x); // Don't bulge at the very base
+      `
+    )
+  }
+
+  return (
+    <mesh position={[-0.08, 0.46, 0.09]}>
+      <tubeGeometry args={[curve, 64, 0.008, 16, false]} />
+      <meshStandardMaterial
+        color="#ff2b56"
+        emissive="#ff2b56"
+        emissiveIntensity={1.5}
+        transparent
+        opacity={0.8}
+        roughness={0.3}
+        onBeforeCompile={onBeforeCompile}
+      />
+    </mesh>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Visible Bloodflow Direction (Instanced Glowing Orbs)
+// ─────────────────────────────────────────────────────────────────────────────
+function VascularBloodflow({ points, count = 15, color = '#ff9900' }: { points: [number, number, number][], count?: number, color?: string }) {
+  const meshRef = useRef<THREE.InstancedMesh>(null)
+  
+  const curve = useMemo(() => {
+    const vectors = points.map(p => new THREE.Vector3(...p))
+    return new THREE.CatmullRomCurve3(vectors)
+  }, [points])
+
+  const dummy = useMemo(() => new THREE.Object3D(), [])
+  const phases = useMemo(() => new Float32Array(count).map(() => Math.random()), [count])
+
+  useFrame((state, delta) => {
+    if (!meshRef.current) return
+    const bpm = useTelemetryStore.getState().liveTelemetryFrame.bpm
+    const speed = (bpm / 60) * 0.4 // Base speed based on BPM
+
+    for (let i = 0; i < count; i++) {
+      phases[i] = (phases[i] + delta * speed) % 1.0
+      
+      const pos = curve.getPointAt(phases[i])
+      dummy.position.copy(pos)
+      
+      // Optional: Add tangent-based rotation if we used non-spheres, but spheres are fine.
+      // Pulse scale based on heartbeat
+      const beatPhase = (state.clock.elapsedTime % (60 / bpm)) / (60 / bpm)
+      const isPulse = beatPhase < 0.2
+      const scale = isPulse ? 1.5 : 1.0
+      dummy.scale.setScalar(scale)
+      
+      dummy.updateMatrix()
+      meshRef.current.setMatrixAt(i, dummy.matrix)
+    }
+    meshRef.current.instanceMatrix.needsUpdate = true
+  })
+
+  return (
+    <>
+      <PulsingVascularLine points={points} color={color} baseWidth={0.8} baseOpacity={0.4} />
+      <instancedMesh ref={meshRef} args={[undefined, undefined, count]}>
+        <sphereGeometry args={[0.006, 8, 8]} />
+        <meshBasicMaterial color={color} transparent opacity={0.9} blending={THREE.AdditiveBlending} />
+      </instancedMesh>
+    </>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Physiological Lung Morphing Component
+// ─────────────────────────────────────────────────────────────────────────────
+function PhysiologicalLung({ position, isLeft, color, emissiveIntensity }: { position: [number, number, number], isLeft: boolean, color: THREE.Color, emissiveIntensity: number }) {
+  const materialRef = useRef<THREE.MeshStandardMaterial>(null)
+  
+  const uniforms = useMemo(() => ({
+    uBreathExpansion: { value: 0 }
+  }), [])
+
+  useFrame((state, delta) => {
+    const elapsed = state.clock.elapsedTime
+    const liveOxygen = useTelemetryStore.getState().liveTelemetryFrame.oxygenSaturation
+    
+    const respRate = 9 // Pulmonary distress compensation rate
+    const breathDuration = 60 / respRate
+    const respPhase = ((elapsed / breathDuration) * Math.PI * 2)
+    const breathingFactor = Math.sin(respPhase)
+
+    // Calculate amplitude based on oxygen distress
+    const amplitudeFactor = (liveOxygen / 100) * 0.15
+    uniforms.uBreathExpansion.value = Math.max(0, breathingFactor) * amplitudeFactor
+
+    if (materialRef.current) {
+      materialRef.current.emissiveIntensity = emissiveIntensity
+      materialRef.current.color.copy(color)
+      materialRef.current.emissive.copy(color)
+    }
+  })
+
+  const onBeforeCompile = (shader: any) => {
+    shader.uniforms.uBreathExpansion = uniforms.uBreathExpansion
+    shader.vertexShader = `
+      uniform float uBreathExpansion;
+      ${shader.vertexShader}
+    `.replace(
+      `#include <begin_vertex>`,
+      `
+      vec3 transformed = position;
+      
+      // The cylinder height is 0.5 (from -0.25 to +0.25 locally)
+      // Map local y to a gradient: 0.0 at the top, 1.0 at the bottom
+      float bottomFactor = smoothstep(0.25, -0.25, position.y);
+      
+      // Expand outward along X/Z mostly at the bottom
+      transformed.x += sign(position.x) * bottomFactor * uBreathExpansion * 0.8;
+      transformed.z += sign(position.z) * bottomFactor * uBreathExpansion * 0.8;
+      
+      // Pull downward at the bottom (diaphragm pulling)
+      transformed.y -= bottomFactor * uBreathExpansion * 1.2;
+      `
+    )
+  }
+
+  // Use a softer geometry (sphere stretched) rather than a rigid cylinder for organic feel
+  return (
+    <mesh position={position}>
+      <sphereGeometry args={[0.1, 32, 32]} />
+      <meshStandardMaterial
+        ref={materialRef}
+        wireframe
+        transparent
+        opacity={0.7}
+        roughness={0.8}
+        metalness={0.1}
+        blending={THREE.AdditiveBlending}
+        onBeforeCompile={onBeforeCompile}
+      />
+    </mesh>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Primary Internal WebGL Hologram Scene Component
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Interactive Camera Controller
+// ─────────────────────────────────────────────────────────────────────────────
+function CameraController({ controlsRef }: { controlsRef: any }) {
+  const selectedOrgan = useTelemetryStore((s) => s.selectedOrgan)
+  const customZoomTarget = useTelemetryStore((s) => s.customZoomTarget)
+  const { camera } = useThree()
+  
+  const lastOrgan = useRef(selectedOrgan)
+  const isTransitioning = useRef(false)
+  const customTargetId = useRef(0)
+  
+  const targets = useMemo(() => ({
+    none: { pos: new THREE.Vector3(0, 0, 3.8), target: new THREE.Vector3(0, 0, 0) },
+    heart: { pos: new THREE.Vector3(-0.08, 0.46, 0.9), target: new THREE.Vector3(-0.08, 0.46, 0.09) },
+    lungs: { pos: new THREE.Vector3(0, 0.5, 1.2), target: new THREE.Vector3(0, 0.5, 0.02) },
+    brain: { pos: new THREE.Vector3(0, 1.35, 0.9), target: new THREE.Vector3(0, 1.35, 0.05) }
+  }), [])
+
+  useFrame((state, delta) => {
+    if (!controlsRef.current) return
+    
+    if (lastOrgan.current !== selectedOrgan) {
+      isTransitioning.current = true
+      lastOrgan.current = selectedOrgan
+    } else if (selectedOrgan === 'custom' && customZoomTarget) {
+      // Re-trigger transition if user clicks a new spot while already in custom mode
+      const currentId = customZoomTarget.pos[0] + customZoomTarget.target[0]
+      if (customTargetId.current !== currentId) {
+        isTransitioning.current = true
+        customTargetId.current = currentId
+      }
+    }
+    
+    let t = targets[selectedOrgan as keyof typeof targets] || targets.none
+    if (selectedOrgan === 'custom' && customZoomTarget) {
+      t = {
+        pos: new THREE.Vector3(...customZoomTarget.pos),
+        target: new THREE.Vector3(...customZoomTarget.target)
+      }
+    }
+    
+    // Smoothly animate the focal target
+    controlsRef.current.target.lerp(t.target, delta * 3.5)
+    
+    if (isTransitioning.current) {
+      if (selectedOrgan !== 'none') {
+        // Fly to specific inspection angle
+        camera.position.lerp(t.pos, delta * 3.5)
+        
+        if (camera.position.distanceTo(t.pos) < 0.05) {
+          isTransitioning.current = false
+        }
+      } else {
+        // Return to full-body view while preserving current azimuthal rotation
+        const dir = camera.position.clone().sub(controlsRef.current.target).normalize()
+        if (dir.lengthSq() === 0) dir.set(0, 0, 1)
+        
+        const desiredPos = controlsRef.current.target.clone().add(dir.multiplyScalar(3.8))
+        // Gently pull the vertical angle back towards the equator (y=0) for a clean spin
+        desiredPos.y = THREE.MathUtils.lerp(desiredPos.y, 0, delta * 2.0)
+        
+        camera.position.lerp(desiredPos, delta * 3.5)
+        
+        // Stop forcing the camera once we reach the baseline distance so OrbitControls can zoom freely
+        if (camera.position.distanceTo(desiredPos) < 0.05) {
+          isTransitioning.current = false
+        }
+      }
+    }
+    
+    controlsRef.current.update()
+  })
+  return null
+}
+
 function HologramScene() {
   // Mesh References
   const brainMeshRef = useRef<THREE.Mesh>(null)
@@ -280,16 +670,35 @@ function HologramScene() {
   const rightLungMeshRef = useRef<THREE.Mesh>(null)
   const heartMeshRef = useRef<THREE.Mesh>(null)
   const liverMeshRef = useRef<THREE.Mesh>(null)
-  const brainRingRef = useRef<THREE.Mesh>(null)
+  const brainRing1Ref = useRef<THREE.Mesh>(null)
+  const brainRing2Ref = useRef<THREE.Mesh>(null)
+  const brainRing3Ref = useRef<THREE.Mesh>(null)
+  const heartWaveMeshRef = useRef<THREE.Mesh>(null)
+
+  // Particle References
+  const brainPointsRef = useRef<THREE.Points>(null)
+  const lungPointsRef = useRef<THREE.Points>(null)
 
   // Material References
   const brainMatRef = useRef<THREE.MeshStandardMaterial>(null)
   const lungMatRef = useRef<THREE.MeshStandardMaterial>(null)
   const heartMatRef = useRef<THREE.MeshStandardMaterial>(null)
   const liverMatRef = useRef<THREE.MeshStandardMaterial>(null)
+  const heartWaveMatRef = useRef<THREE.MeshBasicMaterial>(null)
+
+  // Pre-allocate Color objects outside useFrame to avoid per-frame GC allocations
+  const brainColor = useRef(new THREE.Color('#c040ff'))
+  const lungColor  = useRef(new THREE.Color('#00ccff'))
+  const heartColor = useRef(new THREE.Color('#ff2b56'))
+  const liverColor = useRef(new THREE.Color('#ff9900'))
+
+  // Smooth noise accumulator for brain jitter (avoids jarring Math.random spikes)
+  const brainJitter = useRef(1.0)
 
   // Subscribe to Zustand reactive updates to populate HUD overlay cards dynamically
+  // Subscribe to Zustand reactive updates to populate HUD overlay cards dynamically
   const currentCondition = useTelemetryStore((s) => s.currentCondition)
+  const wireframeMode = useTelemetryStore((s) => s.wireframeMode)
   const bpm = useTelemetryStore((s) => s.liveTelemetryFrame.bpm)
   const oxygen = useTelemetryStore((s) => s.liveTelemetryFrame.oxygenSaturation)
   const glucose = useTelemetryStore((s) => s.liveTelemetryFrame.glucose)
@@ -302,51 +711,85 @@ function HologramScene() {
     }
   }
 
-  useFrame((state) => {
+  // Brain synaptic particle simulation data
+  const brainParticlesCount = 80
+  const brainParticlesData = useMemo(() => {
+    const temp = new Float32Array(brainParticlesCount * 3)
+    const speeds = new Float32Array(brainParticlesCount * 3)
+    for (let i = 0; i < brainParticlesCount; i++) {
+      const theta = Math.random() * Math.PI * 2
+      const phi = Math.acos((Math.random() * 2) - 1)
+      const dist = 0.05 + Math.random() * 0.15
+      temp[i * 3]     = Math.sin(phi) * Math.cos(theta) * dist
+      temp[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * dist
+      temp[i * 3 + 2] = Math.cos(phi) * dist
+      speeds[i * 3]     = temp[i * 3]     * 0.35
+      speeds[i * 3 + 1] = temp[i * 3 + 1] * 0.35
+      speeds[i * 3 + 2] = temp[i * 3 + 2] * 0.35
+    }
+    return { positions: temp, speeds }
+  }, [])
+
+  // Lung air path particle data — store per-particle x/z offsets to stop jitter
+  const lungParticlesCount = 60
+  const lungParticlesData = useMemo(() => {
+    const positions = new Float32Array(lungParticlesCount * 3)
+    const progress  = new Float32Array(lungParticlesCount)
+    const side      = new Float32Array(lungParticlesCount)
+    const offX      = new Float32Array(lungParticlesCount) // stable x offset per particle
+    const offZ      = new Float32Array(lungParticlesCount) // stable z offset per particle
+    for (let i = 0; i < lungParticlesCount; i++) {
+      progress[i] = Math.random()
+      side[i]     = Math.random() > 0.5 ? 1 : -1
+      offX[i]     = (Math.random() - 0.5) * 0.012
+      offZ[i]     = (Math.random() - 0.5) * 0.012
+    }
+    return { positions, progress, side, offX, offZ }
+  }, [])
+
+  useFrame((state, delta) => {
     const elapsed = state.clock.elapsedTime
 
     // Read state directly inside loop to optimize WebGL transforms at 60fps
     const telemetry = useTelemetryStore.getState()
-    const activeCond = telemetry.currentCondition
     const liveBpm = telemetry.liveTelemetryFrame.bpm
     const liveOxygen = telemetry.liveTelemetryFrame.oxygenSaturation
     const liveBrainFreq = telemetry.liveTelemetryFrame.brainwaveFrequency
 
-    const isCardiac = activeCond === 'arrhythmia' || activeCond === 'cardiac'
-    const isRespiratory = activeCond === 'asthma' || activeCond === 'respiratory'
-    const isNeurological = activeCond === 'epilepsy' || activeCond === 'neurological'
-    const isDiabetes = activeCond === 'diabetes'
+    // Hardcode all organ highlights and simulations to run concurrently under systemic stress
+    const isCardiac = true
+    const isRespiratory = true
+    const isNeurological = true
+    const isDiabetes = true
 
     // Target values for opacity and emissive glowing animation
-    let targetBrainOpacity = 0.15
-    let targetLungOpacity = 0.15
-    let targetHeartOpacity = 0.15
-    let targetLiverOpacity = 0.15
+    const selectedOrgan = telemetry.selectedOrgan
+    
+    // Apply Wireframe Mode
+    const wireframeMode = telemetry.wireframeMode
+    const isWireframe = wireframeMode === 'wireframe'
+    const isGhost = wireframeMode === 'dots'
+    
+    if (brainMatRef.current) brainMatRef.current.wireframe = isWireframe
+    if (lungMatRef.current) lungMatRef.current.wireframe = isWireframe
+    if (heartMatRef.current) heartMatRef.current.wireframe = isWireframe
+    if (liverMatRef.current) liverMatRef.current.wireframe = isWireframe
+    
+    // If in ghost ('dots') mode, we drastically lower the opacity so only particles/points are clearly visible
+    const activeOpacity = isGhost ? 0.08 : 0.95
+    const inactiveOpacity = 0.05
+    
+    let targetBrainOpacity = selectedOrgan === 'none' || selectedOrgan === 'brain' ? activeOpacity : inactiveOpacity
+    let targetLungOpacity = selectedOrgan === 'none' || selectedOrgan === 'lungs' ? activeOpacity : inactiveOpacity
+    let targetHeartOpacity = selectedOrgan === 'none' || selectedOrgan === 'heart' ? activeOpacity : inactiveOpacity
+    let targetLiverOpacity = selectedOrgan === 'none' ? activeOpacity : inactiveOpacity
 
-    let brainEmissive = 0.3
-    let lungEmissive = 0.3
-    let heartEmissive = 0.3
-    let liverEmissive = 0.3
+    let brainEmissive = 1.2
+    let lungEmissive = 1.2
+    let heartEmissive = 1.2
+    let liverEmissive = 1.2
 
-    const brainColor = new THREE.Color('#c040ff')
-    const lungColor = new THREE.Color('#00ccff')
-    const heartColor = new THREE.Color('#ff2b56')
-    const liverColor = new THREE.Color('#ff9900')
-
-    // Highlight active selected organ
-    if (isNeurological) {
-      targetBrainOpacity = 0.95
-      brainEmissive = 1.2
-    } else if (isRespiratory) {
-      targetLungOpacity = 0.95
-      lungEmissive = 1.2
-    } else if (isCardiac) {
-      targetHeartOpacity = 0.95
-      heartEmissive = 1.2
-    } else if (isDiabetes) {
-      targetLiverOpacity = 0.95
-      liverEmissive = 1.2
-    }
+    // Use pre-allocated colors (no per-frame allocation)
 
     // 1. Heart Pulse Animation
     let heartScale = 1.0
@@ -354,119 +797,148 @@ function HologramScene() {
     const timeInBeat = elapsed % beatDuration
     const phase = timeInBeat / beatDuration
 
-    if (isCardiac) {
-      // Rapid irregular heartbeat
-      if (phase < 0.12) {
-        heartScale = 1.0 + Math.sin((phase / 0.12) * Math.PI) * 0.22
-        heartEmissive = 2.8
-      } else if (phase >= 0.12 && phase < 0.4) {
-        const t = (phase - 0.12) / 0.28
-        heartScale = 1.0 + Math.cos((t * Math.PI) / 2) * 0.22
-        heartEmissive = 0.5 + Math.cos((t * Math.PI) / 2) * 2.0
-      } else {
-        heartScale = 1.0
-        heartEmissive = 0.3
-      }
-      heartScale += (Math.random() - 0.5) * 0.015
+    // Rapid irregular heartbeat animation
+    if (phase < 0.12) {
+      heartScale = 1.0 + Math.sin((phase / 0.12) * Math.PI) * 0.22
+      heartEmissive = 2.8
+    } else if (phase >= 0.12 && phase < 0.4) {
+      const t = (phase - 0.12) / 0.28
+      heartScale = 1.0 + Math.cos((t * Math.PI) / 2) * 0.22
+      heartEmissive = 0.5 + Math.cos((t * Math.PI) / 2) * 2.0
     } else {
-      // Normal sinus beat
-      if (phase < 0.15) {
-        heartScale = 1.0 + Math.sin((phase / 0.15) * Math.PI) * 0.14
-        heartEmissive = 1.6
-      } else if (phase >= 0.15 && phase < 0.45) {
-        const t = (phase - 0.15) / 0.3
-        heartScale = 1.0 + Math.cos((t * Math.PI) / 2) * 0.14
-        heartEmissive = 0.4 + Math.cos((t * Math.PI) / 2) * 1.0
-      } else {
-        heartScale = 1.0
-        heartEmissive = 0.5
-      }
+      heartScale = 1.0
+      heartEmissive = 0.3
     }
+    // Subtle deterministic jitter tied to elapsed time — smooth, not random
+    heartScale += Math.sin(elapsed * 47.3) * 0.008
+
     if (heartMeshRef.current) {
       heartMeshRef.current.scale.set(heartScale, heartScale, heartScale)
     }
 
-    // 2. Lungs Expansion Animation
-    let lungScaleY = 1.0
-    let lungScaleXZ = 1.0
-    const respRate = isRespiratory ? 9 : 14
+    if (heartWaveMeshRef.current) {
+      // The wave mesh is now removed, we handle aorta pulse in AortaTube
+    }
+
+    // 2. Lungs Material Updates (Scale and Expansion now handled inside PhysiologicalLung shader)
+    const respRate = 9 // Pulmonary distress compensation rate
     const breathDuration = 60 / respRate
     const respPhase = ((elapsed / breathDuration) * Math.PI * 2)
     const breathingFactor = Math.sin(respPhase)
 
-    if (isRespiratory) {
-      // Shallow, compromised breathing
-      const amplitudeFactor = (liveOxygen / 100) * 0.05
-      lungScaleY = 1.0 + breathingFactor * amplitudeFactor
-      lungScaleXZ = 1.0 + breathingFactor * (amplitudeFactor * 0.5)
-      lungEmissive = 0.25 + (breathingFactor > 0 ? breathingFactor * 1.6 : 0)
-    } else {
-      // Deep nominal breaths
-      lungScaleY = 1.0 + breathingFactor * 0.08
-      lungScaleXZ = 1.0 + breathingFactor * 0.035
-      lungEmissive = 0.4 + (breathingFactor > 0 ? breathingFactor * 0.8 : 0)
-    }
-    if (leftLungMeshRef.current && rightLungMeshRef.current) {
-      leftLungMeshRef.current.scale.set(lungScaleXZ, lungScaleY, lungScaleXZ)
-      rightLungMeshRef.current.scale.set(lungScaleXZ, lungScaleY, lungScaleXZ)
-    }
+    lungEmissive = 0.25 + (breathingFactor > 0 ? breathingFactor * 1.6 : 0)
 
-    // 3. Brain Synaptic Spin & Seizure Jitter
+    // 3. Brain Synaptic Spin — smooth noise via lerp accumulator, delta-time rotations
     let brainScale = 1.0
     if (brainMeshRef.current) {
-      if (isNeurological) {
-        brainMeshRef.current.rotation.y += liveBrainFreq * 0.0035
-        brainScale = 1.0 + (Math.random() - 0.5) * 0.04 * (liveBrainFreq / 15)
-        brainEmissive = Math.random() > 0.85 ? 3.2 : 0.4 + Math.random() * 0.8
-      } else {
-        brainMeshRef.current.rotation.y += liveBrainFreq * 0.001
-        brainScale = 1.0
-        brainEmissive = 0.5 + Math.sin(elapsed * 1.5) * 0.25
-      }
+      brainMeshRef.current.rotation.y += delta * liveBrainFreq * 0.22  // delta-based
+      // Smooth jitter: lerp toward a slowly wandering target instead of raw Math.random
+      const jitterTarget = 1.0 + Math.sin(elapsed * 3.7) * 0.02 * (liveBrainFreq / 15)
+      brainJitter.current = THREE.MathUtils.lerp(brainJitter.current, jitterTarget, 0.12)
+      brainScale = brainJitter.current
+      // Smooth emissive flicker
+      const flickerTarget = 0.4 + Math.abs(Math.sin(elapsed * 4.1)) * 1.6
+      brainEmissive = THREE.MathUtils.lerp(brainEmissive, flickerTarget, 0.15)
       brainMeshRef.current.scale.set(brainScale, brainScale, brainScale)
     }
-    if (brainRingRef.current) {
-      brainRingRef.current.rotation.z -= 0.015
-      brainRingRef.current.rotation.x = Math.sin(elapsed * 0.5) * 0.15
+    if (brainRing1Ref.current) {
+      brainRing1Ref.current.rotation.z -= delta * 0.9
+      brainRing1Ref.current.rotation.x  = Math.sin(elapsed * 0.5) * 0.15
+    }
+    if (brainRing2Ref.current) {
+      brainRing2Ref.current.rotation.z += delta * 1.5
+      brainRing2Ref.current.rotation.y  = Math.cos(elapsed * 0.4) * 0.12
+    }
+    if (brainRing3Ref.current) {
+      brainRing3Ref.current.rotation.x += delta * 0.6
+      brainRing3Ref.current.rotation.y -= delta * 0.9
     }
 
     // 4. Liver Metabolic Glow
     let liverScale = 1.0
-    if (isDiabetes) {
-      liverScale = 1.0 + Math.sin(elapsed * 3.5) * 0.03
-      liverEmissive = 0.8 + Math.sin(elapsed * 6) * 0.5
-    } else {
-      liverScale = 1.0
-      liverEmissive = 0.4 + Math.sin(elapsed * 0.8) * 0.15
-    }
+    liverScale = 1.0 + Math.sin(elapsed * 3.5) * 0.03
+    liverEmissive = 0.8 + Math.sin(elapsed * 6) * 0.5
     if (liverMeshRef.current) {
       liverMeshRef.current.scale.set(liverScale, liverScale, liverScale)
     }
 
-    // 5. Smoothly lerp material properties to prevent flashing
+    // 5. Synaptic Particle Emitter — delta-scaled, smooth burst modulation
+    if (brainPointsRef.current) {
+      const positions = brainPointsRef.current.geometry.attributes.position.array as Float32Array
+      const speeds    = brainParticlesData.speeds
+      const burst     = 1.0 + Math.sin(elapsed * 5) * 0.4  // smooth wave, no random
+      for (let i = 0; i < brainParticlesCount; i++) {
+        positions[i * 3]     += speeds[i * 3]     * delta * burst
+        positions[i * 3 + 1] += speeds[i * 3 + 1] * delta * burst
+        positions[i * 3 + 2] += speeds[i * 3 + 2] * delta * burst
+        const d2 = positions[i * 3] ** 2 + positions[i * 3 + 1] ** 2 + positions[i * 3 + 2] ** 2
+        if (d2 > 0.2025) {  // 0.45² — avoid sqrt per particle
+          // Reset to small random seed near center
+          const a = (i * 2.399) % (Math.PI * 2)  // golden-angle spread — deterministic
+          positions[i * 3]     = Math.cos(a) * 0.025
+          positions[i * 3 + 1] = Math.sin(a) * 0.025
+          positions[i * 3 + 2] = 0.01
+        }
+      }
+      brainPointsRef.current.geometry.attributes.position.needsUpdate = true
+    }
+
+    // 6. Bronchial Airflow Particles — stable per-particle offsets prevent jitter
+    if (lungPointsRef.current) {
+      const positions = lungPointsRef.current.geometry.attributes.position.array as Float32Array
+      const progress  = lungParticlesData.progress
+      const side      = lungParticlesData.side
+      const offX      = lungParticlesData.offX
+      const offZ      = lungParticlesData.offZ
+      for (let i = 0; i < lungParticlesCount; i++) {
+        progress[i] += delta * 0.55  // delta-based, hardware-independent speed
+        if (progress[i] > 1.0) {
+          progress[i] = 0
+          side[i] = i % 2 === 0 ? 1 : -1  // alternating sides — no random
+        }
+        const p = progress[i]
+        if (p < 0.4) {
+          const t = p / 0.4
+          positions[i * 3]     = offX[i]
+          positions[i * 3 + 1] = 1.05 - t * 0.3
+          positions[i * 3 + 2] = offZ[i]
+        } else {
+          const t   = (p - 0.4) / 0.6
+          const endX = side[i] * 0.24
+          const endY = 0.5 - t * 0.18
+          positions[i * 3]     = t * endX + offX[i]
+          positions[i * 3 + 1] = 0.75 + t * (endY - 0.75)
+          positions[i * 3 + 2] = offZ[i] + t * 0.02
+        }
+      }
+      lungPointsRef.current.geometry.attributes.position.needsUpdate = true
+    }
+
+    // 7. Lerp material properties — delta-scaled alpha for frame-rate independent feel
+    const lerpA = 1 - Math.pow(0.04, delta)  // exponential decay — same feel at any FPS
     if (brainMatRef.current) {
-      brainMatRef.current.opacity = THREE.MathUtils.lerp(brainMatRef.current.opacity, targetBrainOpacity, 0.08)
-      brainMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(brainMatRef.current.emissiveIntensity, brainEmissive, 0.1)
-      brainMatRef.current.color.lerp(brainColor, 0.08)
-      brainMatRef.current.emissive.lerp(brainColor, 0.08)
+      brainMatRef.current.opacity          = THREE.MathUtils.lerp(brainMatRef.current.opacity, targetBrainOpacity, lerpA)
+      brainMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(brainMatRef.current.emissiveIntensity, brainEmissive, lerpA)
+      brainMatRef.current.color.lerp(brainColor.current, lerpA)
+      brainMatRef.current.emissive.lerp(brainColor.current, lerpA)
     }
     if (lungMatRef.current) {
-      lungMatRef.current.opacity = THREE.MathUtils.lerp(lungMatRef.current.opacity, targetLungOpacity, 0.08)
-      lungMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(lungMatRef.current.emissiveIntensity, lungEmissive, 0.08)
-      lungMatRef.current.color.lerp(lungColor, 0.08)
-      lungMatRef.current.emissive.lerp(lungColor, 0.08)
+      lungMatRef.current.opacity          = THREE.MathUtils.lerp(lungMatRef.current.opacity, targetLungOpacity, lerpA)
+      lungMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(lungMatRef.current.emissiveIntensity, lungEmissive, lerpA)
+      lungMatRef.current.color.lerp(lungColor.current, lerpA)
+      lungMatRef.current.emissive.lerp(lungColor.current, lerpA)
     }
     if (heartMatRef.current) {
-      heartMatRef.current.opacity = THREE.MathUtils.lerp(heartMatRef.current.opacity, targetHeartOpacity, 0.08)
-      heartMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(heartMatRef.current.emissiveIntensity, heartEmissive, 0.1)
-      heartMatRef.current.color.lerp(heartColor, 0.08)
-      heartMatRef.current.emissive.lerp(heartColor, 0.08)
+      heartMatRef.current.opacity          = THREE.MathUtils.lerp(heartMatRef.current.opacity, targetHeartOpacity, lerpA)
+      heartMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(heartMatRef.current.emissiveIntensity, heartEmissive, lerpA)
+      heartMatRef.current.color.lerp(heartColor.current, lerpA)
+      heartMatRef.current.emissive.lerp(heartColor.current, lerpA)
     }
     if (liverMatRef.current) {
-      liverMatRef.current.opacity = THREE.MathUtils.lerp(liverMatRef.current.opacity, targetLiverOpacity, 0.08)
-      liverMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(liverMatRef.current.emissiveIntensity, liverEmissive, 0.08)
-      liverMatRef.current.color.lerp(liverColor, 0.08)
-      liverMatRef.current.emissive.lerp(liverColor, 0.08)
+      liverMatRef.current.opacity          = THREE.MathUtils.lerp(liverMatRef.current.opacity, targetLiverOpacity, lerpA)
+      liverMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(liverMatRef.current.emissiveIntensity, liverEmissive, lerpA)
+      liverMatRef.current.color.lerp(liverColor.current, lerpA)
+      liverMatRef.current.emissive.lerp(liverColor.current, lerpA)
     }
   })
 
@@ -484,24 +956,15 @@ function HologramScene() {
       <DetailedSkeleton />
 
       {/* 3. Cardiovascular Vascular System (Arteries & Veins) */}
-      {/* Left Arm Vascular Feed */}
-      <Line points={[[-0.08, 0.46, 0.09], [-0.43, 1.03, 0.02], [-0.62, 0.55, 0.01], [-0.78, 0.04, 0.0]]} color="#ff1133" lineWidth={0.8} transparent opacity={0.6} />
-      <Line points={[[-0.08, 0.44, 0.07], [-0.47, 1.07, -0.02], [-0.65, 0.57, -0.01], [-0.82, 0.06, 0.0]]} color="#0055ff" lineWidth={0.8} transparent opacity={0.6} />
+      <VascularBloodflow points={[[-0.08, 0.46, 0.09], [-0.43, 1.03, 0.02], [-0.62, 0.55, 0.01], [-0.78, 0.04, 0.0]]} color="#ff9900" />
+      <VascularBloodflow points={[[-0.08, 0.46, 0.09], [0.43, 1.03, 0.02], [0.62, 0.55, 0.01], [0.78, 0.04, 0.0]]} color="#ff9900" />
       
-      {/* Right Arm Vascular Feed */}
-      <Line points={[[-0.08, 0.46, 0.09], [0.43, 1.03, 0.02], [0.62, 0.55, 0.01], [0.78, 0.04, 0.0]]} color="#ff1133" lineWidth={0.8} transparent opacity={0.6} />
-      <Line points={[[-0.08, 0.44, 0.07], [0.47, 1.07, -0.02], [0.65, 0.57, -0.01], [0.82, 0.06, 0.0]]} color="#0055ff" lineWidth={0.8} transparent opacity={0.6} />
+      {/* Lower Vascular */}
+      <VascularBloodflow points={[[-0.08, 0.46, 0.09], [-0.1, -0.23, 0.0], [-0.22, -0.98, 0.0], [-0.24, -1.68, 0.0]]} color="#ff9900" />
+      <VascularBloodflow points={[[-0.08, 0.46, 0.09], [0.1, -0.23, 0.0], [0.22, -0.98, 0.0], [0.24, -1.68, 0.0]]} color="#ff9900" />
 
-      {/* Lower Body/Legs Vascular Feed */}
-      <Line points={[[-0.08, 0.46, 0.09], [-0.1, -0.23, 0.0], [-0.22, -0.98, 0.0], [-0.24, -1.68, 0.0]]} color="#ff1133" lineWidth={0.8} transparent opacity={0.6} />
-      <Line points={[[-0.08, 0.44, 0.07], [-0.14, -0.27, -0.02], [-0.26, -1.02, -0.02], [-0.28, -1.72, 0.0]]} color="#0055ff" lineWidth={0.8} transparent opacity={0.6} />
-
-      <Line points={[[-0.08, 0.46, 0.09], [0.1, -0.23, 0.0], [0.22, -0.98, 0.0], [0.24, -1.68, 0.0]]} color="#ff1133" lineWidth={0.8} transparent opacity={0.6} />
-      <Line points={[[-0.08, 0.44, 0.07], [0.14, -0.27, -0.02], [0.26, -1.02, -0.02], [0.28, -1.72, 0.0]]} color="#0055ff" lineWidth={0.8} transparent opacity={0.6} />
-
-      {/* Carotid Vascular Feed (Neck to Brain) */}
-      <Line points={[[-0.08, 0.46, 0.09], [-0.05, 1.0, 0.02], [0.0, 1.35, 0.05]]} color="#ff1133" lineWidth={1.0} transparent opacity={0.6} />
-      <Line points={[[-0.08, 0.44, 0.07], [-0.09, 1.0, -0.02], [-0.04, 1.35, -0.01]]} color="#0055ff" lineWidth={1.0} transparent opacity={0.6} />
+      {/* Cranial Vascular */}
+      <VascularBloodflow points={[[-0.08, 0.46, 0.09], [-0.05, 1.0, 0.02], [0.0, 1.35, 0.05]]} color="#ff9900" />
 
       {/* 4. Nervous System Branches (Purple) */}
       <Line points={[[0, 0.95, -0.05], [-0.45, 1.05, 0], [-0.62, 0.55, 0], [-0.8, 0.05, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
@@ -509,13 +972,8 @@ function HologramScene() {
       <Line points={[[0, -0.1, -0.05], [-0.2, -0.25, 0], [-0.24, -1.0, 0], [-0.25, -1.7, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
       <Line points={[[0, -0.1, -0.05], [0.2, -0.25, 0], [0.24, -1.0, 0], [0.25, -1.7, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
 
-      {/* 5. BRAIN Mesh - Interactive */}
-      <group
-        position={[0, 1.4, 0]}
-        onPointerOver={() => setCursor('pointer')}
-        onPointerOut={() => setCursor('auto')}
-        onClick={() => handleSelectCondition('epilepsy')}
-      >
+      {/* 5. BRAIN Mesh - Dedicated */}
+      <group position={[0, 1.4, 0]} onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('brain') }}>
         <mesh ref={brainMeshRef}>
           <icosahedronGeometry args={[0.22, 2]} />
           <meshStandardMaterial
@@ -531,55 +989,45 @@ function HologramScene() {
             metalness={0.1}
           />
         </mesh>
-        {/* Halo of revolving neural orbits around head */}
-        <mesh ref={brainRingRef} rotation={[Math.PI / 3, 0, 0]}>
+        {/* Halo of 3 revolving neural orbits around head */}
+        <mesh ref={brainRing1Ref} rotation={[Math.PI / 3, 0, 0]}>
           <torusGeometry args={[0.38, 0.01, 8, 32]} />
-          <meshBasicMaterial color="#c040ff" transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+          <meshBasicMaterial color="#c040ff" transparent opacity={0.8} blending={THREE.AdditiveBlending} />
         </mesh>
-        <mesh rotation={[Math.PI / 4, Math.PI / 4, 0]}>
-          <torusGeometry args={[0.42, 0.006, 6, 24]} />
-          <meshBasicMaterial color="#c040ff" transparent opacity={0.2} blending={THREE.AdditiveBlending} />
+        <mesh ref={brainRing2Ref} rotation={[Math.PI / 4, Math.PI / 4, 0]}>
+          <torusGeometry args={[0.42, 0.007, 6, 24]} />
+          <meshBasicMaterial color="#c040ff" transparent opacity={0.6} blending={THREE.AdditiveBlending} />
         </mesh>
+        <mesh ref={brainRing3Ref} rotation={[0, Math.PI / 6, Math.PI / 3]}>
+          <torusGeometry args={[0.46, 0.004, 6, 20]} />
+          <meshBasicMaterial color="#c040ff" transparent opacity={0.5} blending={THREE.AdditiveBlending} />
+        </mesh>
+        
+        {/* Synaptic particles emitter around brain */}
+        <points ref={brainPointsRef}>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[brainParticlesData.positions, 3]}
+            />
+          </bufferGeometry>
+          <pointsMaterial
+            size={0.018}
+            color="#c040ff"
+            transparent
+            opacity={0.9}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+          />
+        </points>
       </group>
 
-      {/* 6. LUNGS Meshes & Inner Branching Bronchial Airway Trees - Interactive */}
-      <group
-        onPointerOver={() => setCursor('pointer')}
-        onPointerOut={() => setCursor('auto')}
-        onClick={() => handleSelectCondition('asthma')}
-      >
+      {/* 6. LUNGS Meshes & Inner Branching Bronchial Airway Trees - Dedicated */}
+      <group onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('lungs') }}>
         {/* Left Lung Lobe */}
-        <mesh ref={leftLungMeshRef} position={[-0.24, 0.5, 0.02]}>
-          <cylinderGeometry args={[0.12, 0.08, 0.5, 12, 4]} />
-          <meshStandardMaterial
-            ref={lungMatRef}
-            wireframe
-            transparent
-            opacity={0.7}
-            color="#00ccff"
-            emissive="#00ccff"
-            emissiveIntensity={1.0}
-            blending={THREE.AdditiveBlending}
-            roughness={0.8}
-            metalness={0.1}
-          />
-        </mesh>
+        <PhysiologicalLung position={[-0.24, 0.5, 0.02]} isLeft={true} color={lungColor.current} emissiveIntensity={1.0} />
         {/* Right Lung Lobe */}
-        <mesh ref={rightLungMeshRef} position={[0.24, 0.5, 0.02]}>
-          <cylinderGeometry args={[0.12, 0.08, 0.5, 12, 4]} />
-          <meshStandardMaterial
-            ref={lungMatRef} // share material parameters
-            wireframe
-            transparent
-            opacity={0.7}
-            color="#00ccff"
-            emissive="#00ccff"
-            emissiveIntensity={1.0}
-            blending={THREE.AdditiveBlending}
-            roughness={0.8}
-            metalness={0.1}
-          />
-        </mesh>
+        <PhysiologicalLung position={[0.24, 0.5, 0.02]} isLeft={false} color={lungColor.current} emissiveIntensity={1.0} />
 
         {/* Bronchial Airways Lobe Left */}
         <group position={[-0.24, 0.5, 0.02]} scale={[0.85, 0.85, 0.85]}>
@@ -611,15 +1059,28 @@ function HologramScene() {
             <meshBasicMaterial color="#00ffff" transparent opacity={0.4} />
           </mesh>
         </group>
+
+        {/* Lung air particles */}
+        <points ref={lungPointsRef}>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              args={[lungParticlesData.positions, 3]}
+            />
+          </bufferGeometry>
+          <pointsMaterial
+            size={0.022}
+            color="#00ffff"
+            transparent
+            opacity={0.8}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+          />
+        </points>
       </group>
 
-      {/* 7. HEART Mesh with pulsing Aorta pipe - Interactive */}
-      <group
-        position={[-0.08, 0.46, 0.09]}
-        onPointerOver={() => setCursor('pointer')}
-        onPointerOut={() => setCursor('auto')}
-        onClick={() => handleSelectCondition('arrhythmia')}
-      >
+      {/* 7. HEART Mesh with pulsing Aorta pipe - Dedicated */}
+      <group position={[-0.08, 0.46, 0.09]} onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('heart') }}>
         <mesh ref={heartMeshRef} rotation={[0.15, 0, 0.2]}>
           <octahedronGeometry args={[0.13, 2]} />
           <meshStandardMaterial
@@ -635,6 +1096,18 @@ function HologramScene() {
             metalness={0.1}
           />
         </mesh>
+        {/* Heart ECG Wave Overlay Mesh */}
+        <mesh ref={heartWaveMeshRef} rotation={[0.15, 0, 0.2]}>
+          <torusKnotGeometry args={[0.17, 0.02, 64, 8, 3, 4]} />
+          <meshBasicMaterial
+            ref={heartWaveMatRef}
+            wireframe
+            transparent
+            opacity={0.6}
+            color="#ff2b56"
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
         {/* Pulsing Aorta Arc tube */}
         <mesh position={[0, 0.09, 0.01]} rotation={[0, 0, -Math.PI / 4]}>
           <torusGeometry args={[0.045, 0.015, 8, 16, Math.PI]} />
@@ -642,14 +1115,11 @@ function HologramScene() {
         </mesh>
       </group>
 
-      {/* 8. LIVER Mesh (Abdomen Right Lobe) - Interactive */}
+      {/* 8. LIVER Mesh (Abdomen Right Lobe) - Dedicated */}
       <mesh
         ref={liverMeshRef}
         position={[0.13, 0.12, 0.07]}
         rotation={[0.2, -0.3, -0.1]}
-        onPointerOver={() => setCursor('pointer')}
-        onPointerOut={() => setCursor('auto')}
-        onClick={() => handleSelectCondition('diabetes')}
       >
         <coneGeometry args={[0.15, 0.18, 4]} />
         <meshStandardMaterial
@@ -668,65 +1138,62 @@ function HologramScene() {
 
       {/* 9. Glowing Bent 3D HUD Pointers / Leader Lines */}
       {/* Brain Pointer */}
-      <HudPointerLine start={[0, 1.4, 0]} mid={[1.3, 1.4, 0]} end={[1.7, 1.4, 0]} color="#c040ff" active={currentCondition === 'epilepsy'} />
+      <HudPointerLine start={[0, 1.4, 0]} mid={[1.3, 1.4, 0]} end={[1.7, 1.4, 0]} color="#c040ff" active={true} />
       {/* Lungs Pointer */}
-      <HudPointerLine start={[0.24, 0.5, 0.02]} mid={[1.3, 0.5, 0]} end={[1.7, 0.5, 0]} color="#00ccff" active={currentCondition === 'asthma'} />
+      <HudPointerLine start={[0.24, 0.5, 0.02]} mid={[1.3, 0.5, 0]} end={[1.7, 0.5, 0]} color="#00ccff" active={true} />
       {/* Heart Pointer */}
-      <HudPointerLine start={[-0.08, 0.46, 0.09]} mid={[-1.3, 0.46, 0]} end={[-1.7, 0.46, 0]} color="#ff2b56" active={currentCondition === 'arrhythmia'} />
+      <HudPointerLine start={[-0.08, 0.46, 0.09]} mid={[-1.3, 0.46, 0]} end={[-1.7, 0.46, 0]} color="#ff2b56" active={true} />
       {/* Liver Pointer */}
-      <HudPointerLine start={[0.13, 0.12, 0.07]} mid={[1.3, -0.4, 0]} end={[1.7, -0.4, 0]} color="#ff9900" active={currentCondition === 'diabetes'} />
+      <HudPointerLine start={[0.13, 0.12, 0.07]} mid={[1.3, -0.4, 0]} end={[1.7, -0.4, 0]} color="#ff9900" active={true} />
 
       {/* 10. Floating Holographic HUD HTML Cards in 3D Space */}
 
-      {/* A. NEUROLOGICAL DISTURBANCE (Brain - Top Right) */}
+      {/* A. NEURAL STRESS RESPONSE (Brain - Top Right) */}
       <Html position={[1.7, 1.4, 0]} center distanceFactor={4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          onClick={() => handleSelectCondition('epilepsy')}
-          className={`p-3 rounded border font-mono select-none pointer-events-auto cursor-pointer transition-all duration-300 w-52 flex flex-col gap-1.5 ${
-            currentCondition === 'epilepsy'
-              ? 'bg-[#080d0a]/92 border-[#c040ff] text-slate-100 shadow-[0_0_15px_rgba(192,64,255,0.25)] opacity-100 scale-100'
-              : 'bg-[#080d0a]/70 border-[#c040ff]/20 text-slate-400 opacity-45 saturate-[0.3] scale-95 hover:opacity-80'
-          }`}
+          className="p-3 rounded border font-mono select-none pointer-events-auto cursor-default w-52 flex flex-col gap-1.5 bg-[#080d0a]/92 border-[#c040ff] text-slate-100 shadow-[0_0_15px_rgba(192,64,255,0.25)] opacity-100"
         >
           <div className="flex items-center justify-between text-[7px] border-b border-white/5 pb-1">
-            <span className="font-semibold text-[#c040ff] tracking-widest">NEUROLOGICAL DISTURBANCE</span>
+            <span className="font-semibold text-[#c040ff] tracking-widest flex items-center gap-1">
+              <Brain className="w-2.5 h-2.5" />
+              NEURAL STRESS RESPONSE
+            </span>
             <span className="w-1.5 h-1.5 rounded-full bg-[#c040ff] animate-pulse"></span>
           </div>
           <div className="flex flex-col gap-0.5 text-[8px] text-slate-400">
             <div className="flex justify-between">
               <span>PATHOLOGY:</span>
-              <span className="font-bold text-slate-200">SEIZURE PATTERN</span>
+              <span className="font-bold text-slate-200">CEREBRAL METABOLIC LOAD</span>
             </div>
             <div className="flex justify-between">
               <span>METRIC (EEG):</span>
               <span className="font-bold text-[#c040ff]">{brainwaveFreq.toFixed(1)} Hz</span>
             </div>
           </div>
-          <MiniSvgWave color="#c040ff" speed={currentCondition === 'epilepsy' ? 3.0 : 0.8} amplitude={8} type="noise" />
-          <div className="text-[7px] font-bold text-red-500/80 animate-pulse tracking-wide uppercase mt-0.5">
-            STATUS: CRITICAL SEIZURE ALERT
+          <MiniSvgWave color="#c040ff" speed={1.5} amplitude={8} type="noise" />
+          <div className="text-[7px] font-bold text-[#c040ff] animate-pulse tracking-wide uppercase mt-0.5 flex items-center gap-1">
+            <AlertTriangle className="w-2 h-2" />
+            STATUS: ELEVATED CEREBRAL IRRITABILITY
           </div>
         </div>
       </Html>
 
-      {/* B. RESPIRATORY FUNCTION (Lungs - Center Right) */}
+      {/* B. PULMONARY COMPENSATION (Lungs - Center Right) */}
       <Html position={[1.7, 0.5, 0]} center distanceFactor={4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          onClick={() => handleSelectCondition('asthma')}
-          className={`p-3 rounded border font-mono select-none pointer-events-auto cursor-pointer transition-all duration-300 w-52 flex flex-col gap-1.5 ${
-            currentCondition === 'asthma'
-              ? 'bg-[#080d0a]/92 border-[#00ccff] text-slate-100 shadow-[0_0_15px_rgba(0,204,255,0.25)] opacity-100 scale-100'
-              : 'bg-[#080d0a]/70 border-[#00ccff]/20 text-slate-400 opacity-45 saturate-[0.3] scale-95 hover:opacity-80'
-          }`}
+          className="p-3 rounded border font-mono select-none pointer-events-auto cursor-default w-52 flex flex-col gap-1.5 bg-[#080d0a]/92 border-[#00ccff] text-slate-100 shadow-[0_0_15px_rgba(0,204,255,0.25)] opacity-100"
         >
           <div className="flex items-center justify-between text-[7px] border-b border-white/5 pb-1">
-            <span className="font-semibold text-[#00ccff] tracking-widest">RESPIRATORY FUNCTION</span>
+            <span className="font-semibold text-[#00ccff] tracking-widest flex items-center gap-1">
+              <Activity className="w-2.5 h-2.5" />
+              PULMONARY COMPENSATION
+            </span>
             <span className="w-1.5 h-1.5 rounded-full bg-[#00ccff] animate-pulse"></span>
           </div>
           <div className="flex flex-col gap-0.5 text-[8px] text-slate-400">
             <div className="flex justify-between">
-              <span>TARGET STATE:</span>
-              <span className="font-bold text-slate-200">ASTHMA FLARE</span>
+              <span>STATE:</span>
+              <span className="font-bold text-slate-200">COMPENSATORY VENTR</span>
             </div>
             <div className="flex justify-between text-[7px] gap-2 mt-0.5">
               <span>BPM: <strong className="text-slate-100">{bpm}</strong></span>
@@ -734,31 +1201,30 @@ function HologramScene() {
               <span>GLUCOSE: <strong className="text-slate-100">{glucose}</strong></span>
             </div>
           </div>
-          <MiniSvgWave color="#00ccff" speed={currentCondition === 'asthma' ? 0.6 : 1.2} amplitude={6} type="sine" />
-          <div className="text-[7px] font-bold text-amber-500/80 animate-pulse tracking-wide uppercase mt-0.5">
-            STATUS: BRONCHIAL COMPRESSION
+          <MiniSvgWave color="#00ccff" speed={1.2} amplitude={6} type="sine" />
+          <div className="text-[7px] font-bold text-[#00ccff] animate-pulse tracking-wide uppercase mt-0.5 flex items-center gap-1">
+            <AlertTriangle className="w-2 h-2" />
+            STATUS: KUSSMAUL HYPERVENTILATION
           </div>
         </div>
       </Html>
 
-      {/* C. CARDIAC ARRHYTHMIA (Heart - Center Left) */}
+      {/* C. MYOCARDIAL STRESS (Heart - Center Left) */}
       <Html position={[-1.7, 0.46, 0]} center distanceFactor={4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          onClick={() => handleSelectCondition('arrhythmia')}
-          className={`p-3 rounded border font-mono select-none pointer-events-auto cursor-pointer transition-all duration-300 w-52 flex flex-col gap-1.5 ${
-            currentCondition === 'arrhythmia'
-              ? 'bg-[#080d0a]/92 border-[#ff2b56] text-slate-100 shadow-[0_0_15px_rgba(255,43,86,0.25)] opacity-100 scale-100'
-              : 'bg-[#080d0a]/70 border-[#ff2b56]/20 text-slate-400 opacity-45 saturate-[0.3] scale-95 hover:opacity-80'
-          }`}
+          className="p-3 rounded border font-mono select-none pointer-events-auto cursor-default w-52 flex flex-col gap-1.5 bg-[#080d0a]/92 border-[#ff2b56] text-slate-100 shadow-[0_0_15px_rgba(255,43,86,0.25)] opacity-100"
         >
           <div className="flex items-center justify-between text-[7px] border-b border-white/5 pb-1">
-            <span className="font-semibold text-[#ff2b56] tracking-widest">CARDIAC ARRHYTHMIA</span>
+            <span className="font-semibold text-[#ff2b56] tracking-widest flex items-center gap-1">
+              <Heart className="w-2.5 h-2.5" />
+              MYOCARDIAL STRESS
+            </span>
             <span className="w-1.5 h-1.5 rounded-full bg-[#ff2b56] animate-pulse"></span>
           </div>
           <div className="flex flex-col gap-0.5 text-[8px] text-slate-400">
             <div className="flex justify-between">
               <span>PATHOLOGY:</span>
-              <span className="font-bold text-slate-200">IRREGULAR BEAT</span>
+              <span className="font-bold text-slate-200">CARDIOCYTE ACCELERATION</span>
             </div>
             <div className="flex justify-between text-[7px] gap-2 mt-0.5">
               <span>BPM: <strong className="text-[#ff2b56] font-bold">{bpm}</strong></span>
@@ -766,31 +1232,30 @@ function HologramScene() {
               <span>GLUC: <strong className="text-slate-100">{glucose}</strong></span>
             </div>
           </div>
-          <MiniSvgWave color="#ff2b56" speed={currentCondition === 'arrhythmia' ? 2.5 : 1.0} amplitude={9} type="ecg" />
-          <div className="text-[7px] font-bold text-red-500/80 animate-pulse tracking-wide uppercase mt-0.5">
-            STATUS: CRITICAL VENTRICULAR LOAD
+          <MiniSvgWave color="#ff2b56" speed={1.8} amplitude={9} type="ecg" />
+          <div className="text-[7px] font-bold text-[#ff2b56] animate-pulse tracking-wide uppercase mt-0.5 flex items-center gap-1">
+            <AlertTriangle className="w-2 h-2" />
+            STATUS: SINUS TACHYCARDIA
           </div>
         </div>
       </Html>
 
-      {/* D. DIABETIC GLUCOSE SPIKE (Liver - Bottom Right) */}
+      {/* D. METABOLIC GLUCOSE CRISIS (Liver - Bottom Right) */}
       <Html position={[1.7, -0.4, 0]} center distanceFactor={4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          onClick={() => handleSelectCondition('diabetes')}
-          className={`p-3 rounded border font-mono select-none pointer-events-auto cursor-pointer transition-all duration-300 w-52 flex flex-col gap-1.5 ${
-            currentCondition === 'diabetes'
-              ? 'bg-[#080d0a]/92 border-[#ff9900] text-slate-100 shadow-[0_0_15px_rgba(255,153,0,0.25)] opacity-100 scale-100'
-              : 'bg-[#080d0a]/70 border-[#ff9900]/20 text-slate-400 opacity-45 saturate-[0.3] scale-95 hover:opacity-80'
-          }`}
+          className="p-3 rounded border font-mono select-none pointer-events-auto cursor-default w-52 flex flex-col gap-1.5 bg-[#080d0a]/92 border-[#ff9900] text-slate-100 shadow-[0_0_15px_rgba(255,153,0,0.25)] opacity-100"
         >
           <div className="flex items-center justify-between text-[7px] border-b border-white/5 pb-1">
-            <span className="font-semibold text-[#ff9900] tracking-widest">DIABETIC GLUCOSE SPIKE</span>
+            <span className="font-semibold text-[#ff9900] tracking-widest flex items-center gap-1">
+              <Shield className="w-2.5 h-2.5" />
+              METABOLIC GLUCOSE CRISIS
+            </span>
             <span className="w-1.5 h-1.5 rounded-full bg-[#ff9900] animate-pulse"></span>
           </div>
           <div className="flex flex-col gap-0.5 text-[8px] text-slate-400">
             <div className="flex justify-between">
               <span>METABOLIC STATE:</span>
-              <span className="font-bold text-slate-200">GLUCOSE CRISIS</span>
+              <span className="font-bold text-slate-200">HEPATIC GLUCOSE SPIKE</span>
             </div>
             <div className="flex justify-between text-[7px] gap-2 mt-0.5">
               <span>GLUCOSE: <strong className="text-[#ff9900] font-bold">{glucose} mg/dL</strong></span>
@@ -799,7 +1264,8 @@ function HologramScene() {
             </div>
           </div>
           <MiniSvgWave color="#ff9900" speed={0.8} amplitude={4} type="flat" />
-          <div className="text-[7px] font-bold text-red-500/80 animate-pulse tracking-wide uppercase mt-0.5">
+          <div className="text-[7px] font-bold text-red-500/80 animate-pulse tracking-wide uppercase mt-0.5 flex items-center gap-1">
+            <AlertTriangle className="w-2 h-2" />
             STATUS: INSULIN SATURATION LIMITS
           </div>
         </div>
@@ -809,10 +1275,13 @@ function HologramScene() {
 }
 
 export default function DigitalTwinScene({ currentCondition }: DigitalTwinSceneProps) {
+  const orbitRef = useRef<any>(null)
+
   useEffect(() => {
     // Connect to the WebSocket telemetry server on mount
     const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-    const wsUrl = `ws://${host}:8080`
+    const wsUrl = `ws://${host}:8080/diabetes`
+    useTelemetryStore.getState().disconnectFromTelemetry()
     useTelemetryStore.getState().connectToTelemetry(wsUrl)
     return () => {
       // Clean up connection on unmount
@@ -825,29 +1294,38 @@ export default function DigitalTwinScene({ currentCondition }: DigitalTwinSceneP
     useTelemetryStore.getState().setCurrentCondition(currentCondition)
   }, [currentCondition])
 
+  const isRotating = useTelemetryStore((s) => s.isRotating)
+  const selectedOrgan = useTelemetryStore((s) => s.selectedOrgan)
+
   return (
-    <div className="w-full h-full relative bg-[#040806]/85">
+    <div className="w-full h-full relative bg-[#040806]">
       <Canvas
         camera={{ position: [0, 0, 3.8], fov: 50 }}
-        gl={{ antialias: true, alpha: true }}
-        style={{ background: 'transparent' }}
+        gl={{ antialias: true, alpha: false }}
+        style={{ background: '#040806' }}
       >
-        <ambientLight intensity={0.2} />
+        <ambientLight intensity={0.25} />
         
-        {/* Focused spot lighting to project highlights on transmission clearcoat glass material */}
-        <spotLight position={[5, 5, 5]} angle={0.4} penumbra={1} intensity={6.0} color="#00f6ff" />
-        <spotLight position={[-5, 5, 5]} angle={0.4} penumbra={1} intensity={3.5} color="#c040ff" />
-        <pointLight position={[0, -2, 3]} intensity={1.5} color="#00ffaa" />
+        {/* Subdued spot lighting to project highlights on transmission clearcoat glass material without over-exposure */}
+        <spotLight position={[5, 5, 5]} angle={0.4} penumbra={1} intensity={2.2} color="#00f6ff" />
+        <spotLight position={[-5, 5, 5]} angle={0.4} penumbra={1} intensity={1.5} color="#c040ff" />
+        <pointLight position={[0, -2, 3]} intensity={0.8} color="#00ffaa" />
         
         <HologramScene />
         
+        <CameraController controlsRef={orbitRef} />
+        
         <OrbitControls
+          ref={orbitRef}
           enableDamping
-          dampingFactor={0.05}
+          dampingFactor={0.08}
+          rotateSpeed={0.8}
           maxPolarAngle={Math.PI / 2 + 0.15}
-          minDistance={1.8}
-          maxDistance={5.0}
+          minDistance={0.2}
+          maxDistance={8.0}
           enablePan={false}
+          enableZoom={true}
+          zoomSpeed={0.6}
         />
       </Canvas>
     </div>
