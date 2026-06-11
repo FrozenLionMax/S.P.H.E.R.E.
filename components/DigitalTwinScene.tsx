@@ -4,13 +4,14 @@ import React, { useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
+import { useTelemetryStore } from '@/lib/useTelemetryStore'
 
 interface DigitalTwinSceneProps {
   currentCondition: 'general' | 'arrhythmia' | 'asthma' | 'epilepsy'
 }
 
 // Internal scene component that runs within the Canvas provider
-function HologramScene({ currentCondition }: DigitalTwinSceneProps) {
+function HologramScene() {
   // Mesh Refs
   const brainMeshRef = useRef<THREE.Mesh>(null)
   const leftLungMeshRef = useRef<THREE.Mesh>(null)
@@ -18,128 +19,215 @@ function HologramScene({ currentCondition }: DigitalTwinSceneProps) {
   const heartMeshRef = useRef<THREE.Mesh>(null)
   const spineMeshRef = useRef<THREE.LineSegments>(null)
 
-  // Material Refs (switching to Basic Materials to avoid white blowout from standard lighting)
-  const brainMatRef = useRef<THREE.MeshBasicMaterial>(null)
-  const leftLungMatRef = useRef<THREE.MeshBasicMaterial>(null)
-  const rightLungMatRef = useRef<THREE.MeshBasicMaterial>(null)
-  const heartMatRef = useRef<THREE.MeshBasicMaterial>(null)
+  // Material Refs
+  const brainMatRef = useRef<THREE.MeshStandardMaterial>(null)
+  const lungMatRef = useRef<THREE.MeshStandardMaterial>(null)
+  const heartMatRef = useRef<THREE.MeshStandardMaterial>(null)
   const spineMatRef = useRef<THREE.LineBasicMaterial>(null)
 
   useFrame((state) => {
     const elapsed = state.clock.elapsedTime
 
-    // 1. Determine target opacities and colors based on active condition
+    // ─────────────────────────────────────────────────────────────────────────
+    // WEBGL PERFORMANCE OPTIMIZATION BOUNDARY:
+    // Read Zustand state DIRECTLY from the store inside the useFrame tick hook.
+    // This bypasses React component re-renders completely, letting the WebGL Canvas
+    // animate at 60fps responding to real-time streams with zero React overhead.
+    // ─────────────────────────────────────────────────────────────────────────
+    const telemetry = useTelemetryStore.getState()
+    const currentCondition = telemetry.currentCondition
+    const bpm = telemetry.liveTelemetryFrame.bpm
+    const oxygen = telemetry.liveTelemetryFrame.oxygenSaturation
+    const brainwaveFreq = telemetry.liveTelemetryFrame.brainwaveFrequency
+
+    // Map UI selector conditions to raw semantic biological keys
+    const isCardiac = currentCondition === 'arrhythmia' || currentCondition === 'cardiac'
+    const isRespiratory = currentCondition === 'asthma' || currentCondition === 'respiratory'
+    const isNeurological = currentCondition === 'epilepsy' || currentCondition === 'neurological'
+    const isGeneral = currentCondition === 'general'
+
+    // 1. Determine target opacities, emissive intensities, and colors based on active condition
     let targetBrainOpacity = 0.15
     let targetLungOpacity = 0.15
     let targetHeartOpacity = 0.15
     let targetSpineOpacity = 0.15
+
+    let targetBrainEmissive = 0.3
+    let targetLungEmissive = 0.3
+    let targetHeartEmissive = 0.3
 
     let brainColor = new THREE.Color('#c040ff') // Purple for epilepsy
     let lungColor = new THREE.Color('#00ccff')  // Cyan for asthma
     let heartColor = new THREE.Color('#ff2b56') // Red for arrhythmia
     const defaultSpineColor = new THREE.Color('#00ffaa') // Green for general
 
-    if (currentCondition === 'general') {
+    if (isGeneral) {
       // General mode - all organs visible and nominal (green accents)
-      targetBrainOpacity = 0.7
-      targetLungOpacity = 0.7
-      targetHeartOpacity = 0.7
-      targetSpineOpacity = 0.7
+      targetBrainOpacity = 0.75
+      targetLungOpacity = 0.75
+      targetHeartOpacity = 0.75
+      targetSpineOpacity = 0.75
+
+      targetBrainEmissive = 0.8
+      targetLungEmissive = 0.8
+      targetHeartEmissive = 0.8
 
       brainColor = new THREE.Color('#00ffaa')
       lungColor = new THREE.Color('#00ffaa')
       heartColor = new THREE.Color('#00ffaa')
-    } else if (currentCondition === 'epilepsy') {
+    } else if (isNeurological) {
       targetBrainOpacity = 0.95
-      targetSpineOpacity = 0.5
-    } else if (currentCondition === 'asthma') {
+      targetSpineOpacity = 0.4
+    } else if (isRespiratory) {
       targetLungOpacity = 0.95
-      targetSpineOpacity = 0.5
-    } else if (currentCondition === 'arrhythmia') {
+      targetSpineOpacity = 0.4
+    } else if (isCardiac) {
       targetHeartOpacity = 0.95
-      targetSpineOpacity = 0.5
+      targetSpineOpacity = 0.4
     }
 
-    // 2. Smoothly Lerp materials (transparency, colors)
-    if (brainMatRef.current) {
-      brainMatRef.current.opacity = THREE.MathUtils.lerp(brainMatRef.current.opacity, targetBrainOpacity, 0.08)
-      brainMatRef.current.color.lerp(brainColor, 0.08)
-    }
+    // 2. Physical transformations & pulsing loops driven by live data streams
+    // A. Heart Beat Pulse (Scale & Emissive intensity tied to cardiac phase)
+    let heartScale = 1.0
+    let heartEmissivePulse = targetHeartEmissive
 
-    if (leftLungMatRef.current) {
-      leftLungMatRef.current.opacity = THREE.MathUtils.lerp(leftLungMatRef.current.opacity, targetLungOpacity, 0.08)
-      leftLungMatRef.current.color.lerp(lungColor, 0.08)
-    }
+    if (isCardiac) {
+      // Tachycardia tachycardia - fast erratic contraction scale spike
+      const beatDuration = 60 / bpm
+      const timeInBeat = (elapsed) % beatDuration
+      const phase = timeInBeat / beatDuration
 
-    if (rightLungMatRef.current) {
-      rightLungMatRef.current.opacity = THREE.MathUtils.lerp(rightLungMatRef.current.opacity, targetLungOpacity, 0.08)
-      rightLungMatRef.current.color.lerp(lungColor, 0.08)
-    }
-
-    if (heartMatRef.current) {
-      heartMatRef.current.opacity = THREE.MathUtils.lerp(heartMatRef.current.opacity, targetHeartOpacity, 0.08)
-      heartMatRef.current.color.lerp(heartColor, 0.08)
-    }
-
-    if (spineMatRef.current) {
-      spineMatRef.current.opacity = THREE.MathUtils.lerp(spineMatRef.current.opacity, targetSpineOpacity, 0.08)
-      const spineColor = currentCondition === 'general' ? defaultSpineColor : (currentCondition === 'epilepsy' ? brainColor : (currentCondition === 'asthma' ? lungColor : heartColor))
-      spineMatRef.current.color.lerp(spineColor, 0.08)
-    }
-
-    // 3. Dynamic Mechanical Pulses based on condition
-    // Lungs Ventilation (Scale)
-    if (leftLungMeshRef.current && rightLungMeshRef.current) {
-      let lungScaleY = 1.0
-      let lungScaleXZ = 1.0
-      
-      if (currentCondition === 'asthma') {
-        // Slow, shallow respiration
-        const breathing = Math.sin(elapsed * 1.0)
-        lungScaleY = 1.0 + breathing * 0.04
-        lungScaleXZ = 1.0 + breathing * 0.02
+      if (phase < 0.12) {
+        // Rapid contraction spike
+        const t = phase / 0.12
+        heartScale = 1.0 + Math.sin(t * Math.PI) * 0.22
+        heartEmissivePulse = 2.4 // flash red on peak
+      } else if (phase >= 0.12 && phase < 0.4) {
+        // Erratic relaxation
+        const t = (phase - 0.12) / 0.28
+        heartScale = 1.0 + Math.cos(t * Math.PI / 2) * 0.22
+        heartEmissivePulse = 0.6 + Math.cos(t * Math.PI / 2) * 1.8
       } else {
-        // Regular nominal breathing
-        const breathing = Math.sin(elapsed * 2.0)
-        lungScaleY = 1.0 + breathing * 0.08
-        lungScaleXZ = 1.0 + breathing * 0.04
+        // Rest state
+        heartScale = 1.0
+        heartEmissivePulse = 0.3
       }
+      
+      // Add irregular ventricular vibration noise
+      heartScale += (Math.random() - 0.5) * 0.018
+    } else {
+      // Nominal sinus cycle heartbeat curve
+      const beatDuration = 60 / bpm
+      const timeInBeat = elapsed % beatDuration
+      const phase = timeInBeat / beatDuration
 
+      if (phase < 0.15) {
+        // Systole: rapid contraction
+        const t = phase / 0.15
+        heartScale = 1.0 + Math.sin(t * Math.PI) * 0.15
+        heartEmissivePulse = 1.8 // pulse bright
+      } else if (phase >= 0.15 && phase < 0.45) {
+        // Diastole: smooth expansion
+        const t = (phase - 0.15) / 0.30
+        heartScale = 1.0 + Math.cos(t * Math.PI / 2) * 0.15
+        heartEmissivePulse = 0.6 + Math.cos(t * Math.PI / 2) * 1.2
+      } else {
+        // Isoelectric rest phase
+        heartScale = 1.0
+        heartEmissivePulse = 0.6
+      }
+    }
+
+    if (heartMeshRef.current) {
+      heartMeshRef.current.scale.set(heartScale, heartScale, heartScale)
+    }
+
+    // B. Lungs Respiration (Breathing cycle tied to respiratory frequency and oxygen saturation)
+    let lungScaleY = 1.0
+    let lungScaleXZ = 1.0
+    let lungEmissivePulse = targetLungEmissive
+
+    // Calculate breath period in seconds (nominal: 14 breaths/min -> 4.28s)
+    const respRate = isRespiratory ? 9 : 14
+    const breathDuration = 60 / respRate
+    const respPhase = (elapsed / breathDuration) * Math.PI * 2
+    const breathingFactor = Math.sin(respPhase)
+
+    if (isRespiratory) {
+      // Restricted shallow breathing expansion (oxygen saturation depresses amplitude)
+      const amplitudeFactor = (oxygen / 100) * 0.05
+      lungScaleY = 1.0 + breathingFactor * amplitudeFactor
+      lungScaleXZ = 1.0 + breathingFactor * (amplitudeFactor * 0.5)
+      
+      // Pulse cyan glow on inhalation
+      lungEmissivePulse = 0.3 + (breathingFactor > 0 ? breathingFactor * 1.8 : 0)
+    } else {
+      // Nominal full-depth deep breath cycle
+      lungScaleY = 1.0 + breathingFactor * 0.09
+      lungScaleXZ = 1.0 + breathingFactor * 0.04
+      lungEmissivePulse = 0.6 + (breathingFactor > 0 ? breathingFactor * 1.0 : 0)
+    }
+
+    if (leftLungMeshRef.current && rightLungMeshRef.current) {
       leftLungMeshRef.current.scale.set(lungScaleXZ, lungScaleY, lungScaleXZ)
       rightLungMeshRef.current.scale.set(lungScaleXZ, lungScaleY, lungScaleXZ)
     }
 
-    // Heart Beat Pulse (Scale)
-    if (heartMeshRef.current) {
-      let heartScale = 1.0
-      
-      if (currentCondition === 'arrhythmia') {
-        // Rapid, erratic tachycardia beats
-        const beatPhase = (elapsed * 9) % (Math.PI * 2)
-        const pulse = Math.sin(beatPhase) * Math.cos(beatPhase * 2)
-        heartScale = 1.0 + (pulse > 0.3 ? 0.18 : 0) + (Math.random() - 0.5) * 0.02
-      } else {
-        // Normal rhythmic sinus pulse
-        const beatPhase = (elapsed * 4.5) % (Math.PI * 2)
-        const pulse = Math.sin(beatPhase) > 0.85 ? 0.12 : 0.0
-        heartScale = 1.0 + pulse
-      }
+    // C. Brain Synaptic Flares (Rotation & electrical bursts based on brainwave frequency)
+    let brainScale = 1.0
+    let brainEmissivePulse = targetBrainEmissive
 
-      heartMeshRef.current.scale.set(heartScale, heartScale, heartScale)
+    if (brainMeshRef.current) {
+      if (isNeurological) {
+        // High frequency erratic rotation
+        brainMeshRef.current.rotation.y += brainwaveFreq * 0.003
+        
+        // Chaotic vibration amplitude scale
+        const jitter = (Math.random() - 0.5) * 0.04 * (brainwaveFreq / 12)
+        brainScale = 1.0 + jitter
+
+        // Erratic neurological burst flashes (burst voltage spikes)
+        if (Math.random() > 0.88) {
+          brainEmissivePulse = 3.0 // massive electrical burst flash
+        } else {
+          brainEmissivePulse = 0.3 + Math.random() * 0.7
+        }
+      } else {
+        // Nominal steady rotation
+        brainMeshRef.current.rotation.y += brainwaveFreq * 0.001
+        brainScale = 1.0
+        brainEmissivePulse = 0.6 + Math.sin(elapsed * 2.0) * 0.2 // soft breathing pulse
+      }
+      
+      brainMeshRef.current.scale.set(brainScale, brainScale, brainScale)
     }
 
-    // Brain Rotation / Jitter (Scale & Rotation)
-    if (brainMeshRef.current) {
-      if (currentCondition === 'epilepsy') {
-        // Rapid epileptic vibration and high rotation
-        brainMeshRef.current.rotation.y += 0.065
-        const jitter = (Math.random() - 0.5) * 0.04
-        brainMeshRef.current.scale.set(1.0 + jitter, 1.0 + jitter, 1.0 + jitter)
-      } else {
-        // Normal rotating motion
-        brainMeshRef.current.rotation.y += 0.005
-        brainMeshRef.current.scale.set(1.0, 1.0, 1.0)
-      }
+    // 3. Smoothly apply computed properties to materials
+    if (brainMatRef.current) {
+      brainMatRef.current.opacity = THREE.MathUtils.lerp(brainMatRef.current.opacity, targetBrainOpacity, 0.08)
+      brainMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(brainMatRef.current.emissiveIntensity, brainEmissivePulse, 0.1)
+      brainMatRef.current.color.lerp(brainColor, 0.08)
+      brainMatRef.current.emissive.lerp(brainColor, 0.08)
+    }
+
+    if (lungMatRef.current) {
+      lungMatRef.current.opacity = THREE.MathUtils.lerp(lungMatRef.current.opacity, targetLungOpacity, 0.08)
+      lungMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(lungMatRef.current.emissiveIntensity, lungEmissivePulse, 0.08)
+      lungMatRef.current.color.lerp(lungColor, 0.08)
+      lungMatRef.current.emissive.lerp(lungColor, 0.08)
+    }
+
+    if (heartMatRef.current) {
+      heartMatRef.current.opacity = THREE.MathUtils.lerp(heartMatRef.current.opacity, targetHeartOpacity, 0.08)
+      heartMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(heartMatRef.current.emissiveIntensity, heartEmissivePulse, 0.12)
+      heartMatRef.current.color.lerp(heartColor, 0.08)
+      heartMatRef.current.emissive.lerp(heartColor, 0.08)
+    }
+
+    if (spineMatRef.current) {
+      spineMatRef.current.opacity = THREE.MathUtils.lerp(spineMatRef.current.opacity, targetSpineOpacity, 0.08)
+      const spineColor = isGeneral ? defaultSpineColor : (isNeurological ? brainColor : (isRespiratory ? lungColor : heartColor))
+      spineMatRef.current.color.lerp(spineColor, 0.08)
     }
   })
 
@@ -156,51 +244,67 @@ function HologramScene({ currentCondition }: DigitalTwinSceneProps) {
       {/* 1. BRAIN Wireframe Model */}
       <mesh ref={brainMeshRef} position={[0, 1.4, 0]}>
         <icosahedronGeometry args={[0.5, 2]} />
-        <meshBasicMaterial
+        <meshStandardMaterial
           ref={brainMatRef}
           wireframe
           transparent
           opacity={0.7}
           color="#00ffaa"
+          emissive="#00ffaa"
+          emissiveIntensity={1.0}
           blending={THREE.AdditiveBlending}
+          roughness={0.8}
+          metalness={0.1}
         />
       </mesh>
 
       {/* 2. LUNGS (Symmetrical Left & Right Lobe meshes) */}
       <mesh ref={leftLungMeshRef} position={[-0.48, 0.2, 0]}>
         <cylinderGeometry args={[0.22, 0.15, 0.9, 12, 4]} />
-        <meshBasicMaterial
-          ref={leftLungMatRef}
+        <meshStandardMaterial
+          ref={lungMatRef}
           wireframe
           transparent
           opacity={0.7}
           color="#00ffaa"
+          emissive="#00ffaa"
+          emissiveIntensity={1.0}
           blending={THREE.AdditiveBlending}
+          roughness={0.8}
+          metalness={0.1}
         />
       </mesh>
 
       <mesh ref={rightLungMeshRef} position={[0.48, 0.2, 0]}>
         <cylinderGeometry args={[0.22, 0.15, 0.9, 12, 4]} />
-        <meshBasicMaterial
-          ref={rightLungMatRef}
+        <meshStandardMaterial
+          ref={lungMatRef} // share material parameters
           wireframe
           transparent
           opacity={0.7}
           color="#00ffaa"
+          emissive="#00ffaa"
+          emissiveIntensity={1.0}
           blending={THREE.AdditiveBlending}
+          roughness={0.8}
+          metalness={0.1}
         />
       </mesh>
 
       {/* 3. HEART Wireframe Model (Centered and slightly tilted) */}
       <mesh ref={heartMeshRef} position={[-0.14, 0.15, 0.12]} rotation={[0.2, 0, 0.25]}>
         <octahedronGeometry args={[0.26, 2]} />
-        <meshBasicMaterial
+        <meshStandardMaterial
           ref={heartMatRef}
           wireframe
           transparent
           opacity={0.7}
           color="#00ffaa"
+          emissive="#00ffaa"
+          emissiveIntensity={1.0}
           blending={THREE.AdditiveBlending}
+          roughness={0.8}
+          metalness={0.1}
         />
       </mesh>
 
@@ -235,9 +339,13 @@ export default function DigitalTwinScene({ currentCondition }: DigitalTwinSceneP
         gl={{ antialias: true, alpha: true }}
         style={{ background: 'transparent' }}
       >
-        <ambientLight intensity={0.5} />
+        <ambientLight intensity={0.3} />
         
-        <HologramScene currentCondition={currentCondition} />
+        {/* Soft, low-intensity spot-lights to avoid wireframe color blowout/overexposure */}
+        <pointLight position={[2, 3, 4]} intensity={0.25} color="#00ffaa" />
+        <pointLight position={[-3, -2, -3]} intensity={0.15} color="#00ccff" />
+        
+        <HologramScene />
         
         <OrbitControls
           enableDamping

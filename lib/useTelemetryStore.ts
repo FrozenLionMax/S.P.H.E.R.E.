@@ -13,7 +13,7 @@ export interface TelemetryDataFrame {
   deviceStatus: 'nominal' | 'warning' | 'critical' | 'offline'
 }
 
-export type ConditionType = 'cardiac' | 'respiratory' | 'neurological'
+export type ConditionType = 'general' | 'arrhythmia' | 'asthma' | 'epilepsy' | 'cardiac' | 'respiratory' | 'neurological'
 
 export interface TelemetryStoreState {
   // --- Global States ---
