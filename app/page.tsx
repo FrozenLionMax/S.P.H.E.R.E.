@@ -601,9 +601,10 @@ export default function Page() {
               })}
             </div>
 
-            {/* Dashboard Visualizer Grid: 3D Biometric Matrix, Trend, Cardiac ECG */}
-            <div className="grid gap-3 grid-cols-1 lg:grid-cols-[300px_1fr_420px]">
-              <GlassPanel className="rounded-xl overflow-hidden relative flex flex-col" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
+            {/* Reorganized Dashboard Grid: Left tall column for 3D Biometric Matrix, right column for stacked widgets */}
+            <div className="grid gap-3 grid-cols-1 lg:grid-cols-[380px_1fr]">
+              {/* Left Column: 3D Biometric Matrix */}
+              <GlassPanel className="rounded-xl overflow-hidden relative flex flex-col h-full" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                 <div className="flex items-center justify-between px-4 py-3 shrink-0 relative z-10" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}>
                   <div className="flex items-center gap-4">
                     <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>3D Biometric Matrix</span>
@@ -611,8 +612,8 @@ export default function Page() {
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
                 </div>
                 
-                {/* 3D Hologram slot - Lazy loaded */}
-                <div className="flex-1 w-full min-h-[220px] relative z-0">
+                {/* 3D Hologram slot - Lazy loaded, flex-1 to occupy maximum available vertical space */}
+                <div className="flex-1 w-full min-h-[360px] relative z-0">
                   <LazyDigitalTwinScene transparent={true} />
                 </div>
                 
@@ -633,90 +634,99 @@ export default function Page() {
                 </div>
               </GlassPanel>
 
-              <GlassPanel className="rounded-xl overflow-hidden" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-                  <div className="flex items-center gap-4">
-                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Vitals Trend</span>
-                  </div>
-                </div>
-                <div style={{ height: 120, padding: '8px 0 0', position: 'relative', width: '100%', minWidth: 0 }}>
-                  <VitalsChart samples={samples} />
-                </div>
-              </GlassPanel>
-
-              <GlassPanel className="rounded-xl overflow-hidden flex flex-col" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-                  <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Cardiac Waveform (ECG)</span>
-                  <span className="text-[8px] font-mono font-bold tracking-wider" style={{ color: crisis ? C.red : C.green }}>LIVE SCANNER</span>
-                </div>
-                <div className="flex-1 flex items-center justify-center p-3 bg-black">
-                  <ECG
-                    crisis={crisis}
-                    hr={hr}
-                    width={396}
-                    height={96}
-                    glow={true}
-                    audioEnabled={audioEnabled}
-                    sound={true}
-                    audioCtx={audioCtx}
-                    volume={volume}
-                    onBeat={triggerAudioPulse}
-                  />
-                </div>
-              </GlassPanel>
-            </div>
-
-            {/* Bottom Row stats: Sensor Hardware status, Subsystems health */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-
-              <GlassPanel className="rounded-xl p-4 flex flex-col gap-3" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                <SectionLabel>Sensor Hardware</SectionLabel>
-                <TrackVisualizer trackKey={activeTrackKey} crisis={crisis} lastSample={last} />
-                {PROFILE_HARDWARE[activeTrackKey].map((h, i) => (
-                  <div key={i} className="flex flex-col gap-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>
-                        {h.label}
-                      </span>
-                      <span className="text-[11px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>
-                        {crisis && i === 1 ? 'INTERVENING' : h.value}
-                      </span>
+              {/* Right Column: Other Widgets stacked in smaller spaces */}
+              <div className="flex flex-col gap-3 justify-between">
+                {/* Vitals Trend and Cardiac Waveform */}
+                <div className="grid gap-3 grid-cols-1 xl:grid-cols-[1fr_420px]">
+                  <GlassPanel className="rounded-xl overflow-hidden" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
+                    <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                      <div className="flex items-center gap-4">
+                        <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Vitals Trend</span>
+                      </div>
                     </div>
-                    <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                      <motion.div
-                        className="h-full rounded-full"
-                        style={{ background: crisis ? C.amber : C.green }}
-                        animate={{ width: crisis ? '100%' : '85%' }}
-                        transition={{ duration: 0.8 }}
+                    <div style={{ height: 120, padding: '8px 0 0', position: 'relative', width: '100%', minWidth: 0 }}>
+                      <VitalsChart samples={samples} />
+                    </div>
+                  </GlassPanel>
+
+                  <GlassPanel className="rounded-xl overflow-hidden flex flex-col" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
+                    <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                      <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Cardiac Waveform (ECG)</span>
+                      <span className="text-[8px] font-mono font-bold tracking-wider" style={{ color: crisis ? C.red : C.green }}>LIVE SCANNER</span>
+                    </div>
+                    <div className="flex-1 flex items-center justify-center p-3 bg-black">
+                      <ECG
+                        crisis={crisis}
+                        hr={hr}
+                        width={396}
+                        height={96}
+                        glow={true}
+                        audioEnabled={audioEnabled}
+                        sound={true}
+                        audioCtx={audioCtx}
+                        volume={volume}
+                        onBeat={triggerAudioPulse}
                       />
                     </div>
-                  </div>
-                ))}
-              </GlassPanel>
+                  </GlassPanel>
+                </div>
 
-              <GlassPanel className="rounded-xl overflow-hidden" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}><span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Subsystems</span></div>
-                <div className="flex items-center justify-between px-4 py-[7px] border-b border-[var(--border)]">
-                  <span className="text-[10px]" style={{ color: C.fg }}>Neural Interface</span>
-                  <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>{crisis ? 'DEGRADED' : 'ONLINE'}</span>
+                {/* Sensor Hardware and Subsystems */}
+                <div className="grid gap-3 grid-cols-1 xl:grid-cols-2">
+                  <GlassPanel className="rounded-xl p-4 flex flex-col gap-3" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
+                    <SectionLabel>Sensor Hardware</SectionLabel>
+                    <TrackVisualizer trackKey={activeTrackKey} crisis={crisis} lastSample={last} />
+                    {PROFILE_HARDWARE[activeTrackKey].map((h, i) => (
+                      <div key={i} className="flex flex-col gap-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>
+                            {h.label}
+                          </span>
+                          <span className="text-[10px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>
+                            {crisis && i === 1 ? 'INTERVENING' : h.value}
+                          </span>
+                        </div>
+                        <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                          <motion.div
+                            className="h-full rounded-full"
+                            style={{ background: crisis ? C.amber : C.green }}
+                            animate={{ width: crisis ? '100%' : '85%' }}
+                            transition={{ duration: 0.8 }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </GlassPanel>
+
+                  <GlassPanel className="rounded-xl overflow-hidden flex flex-col justify-between" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
+                    <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                      <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Subsystems</span>
+                    </div>
+                    <div className="flex flex-col justify-center gap-2.5 p-4 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px]" style={{ color: C.fg }}>Neural Interface</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>{crisis ? 'DEGRADED' : 'ONLINE'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px]" style={{ color: C.fg }}>Biometric Sensors</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>{crisis ? 'DEGRADED' : 'ONLINE'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px]" style={{ color: C.fg }}>Telemetry Relay</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: !connected ? C.red : crisis ? C.amber : C.green }}>{!connected ? 'OFFLINE' : crisis ? 'LATENT' : 'ONLINE'}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px]" style={{ color: C.fg }}>Cognitive Proc.</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.red : C.green }}>{crisis ? 'CRITICAL' : 'ONLINE'}</span>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-0.5">
+                        <span className="text-[10px]" style={{ color: C.fg }}>Atmos Monitor</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.red : C.green }}>{crisis ? 'CRITICAL' : 'ONLINE'}</span>
+                      </div>
+                    </div>
+                  </GlassPanel>
                 </div>
-                <div className="flex items-center justify-between px-4 py-[7px] border-b border-[var(--border)]">
-                  <span className="text-[10px]" style={{ color: C.fg }}>Biometric Sensors</span>
-                  <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>{crisis ? 'DEGRADED' : 'ONLINE'}</span>
-                </div>
-                <div className="flex items-center justify-between px-4 py-[7px] border-b border-[var(--border)]">
-                  <span className="text-[10px]" style={{ color: C.fg }}>Telemetry Relay</span>
-                  <span className="text-[9px] font-mono font-semibold" style={{ color: !connected ? C.red : crisis ? C.amber : C.green }}>{!connected ? 'OFFLINE' : crisis ? 'LATENT' : 'ONLINE'}</span>
-                </div>
-                <div className="flex items-center justify-between px-4 py-[7px] border-b border-[var(--border)]">
-                  <span className="text-[10px]" style={{ color: C.fg }}>Cognitive Proc.</span>
-                  <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.red : C.green }}>{crisis ? 'CRITICAL' : 'ONLINE'}</span>
-                </div>
-                <div className="flex items-center justify-between px-4 py-[7px]">
-                  <span className="text-[10px]" style={{ color: C.fg }}>Atmos Monitor</span>
-                  <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.red : C.green }}>{crisis ? 'CRITICAL' : 'ONLINE'}</span>
-                </div>
-              </GlassPanel>
+              </div>
             </div>
           </div>
         </motion.main>
