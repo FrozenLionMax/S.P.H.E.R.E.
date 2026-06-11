@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useRef } from 'react'
+import React, { useRef, useEffect } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
@@ -332,6 +332,20 @@ function HologramScene() {
 }
 
 export default function DigitalTwinScene({ currentCondition }: DigitalTwinSceneProps) {
+  useEffect(() => {
+    // Connect to the WebSocket telemetry server on mount
+    useTelemetryStore.getState().connectToTelemetry('ws://localhost:8080')
+    return () => {
+      // Clean up connection on unmount
+      useTelemetryStore.getState().disconnectFromTelemetry()
+    }
+  }, [])
+
+  useEffect(() => {
+    // Sync the currentCondition prop to the Zustand store
+    useTelemetryStore.getState().setCurrentCondition(currentCondition)
+  }, [currentCondition])
+
   return (
     <div className="w-full h-full relative bg-[#040806]/85">
       <Canvas
