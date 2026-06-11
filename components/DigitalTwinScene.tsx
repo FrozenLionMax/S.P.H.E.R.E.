@@ -1116,7 +1116,7 @@ function HologramScene() {
           ref={heartMeshRef}
           materialRef={heartMatRef}
           color={heartColor.current}
-          emissiveIntensity={heartEmissive}
+          emissiveIntensity={1.0}
           opacity={targetHeartOpacity}
         />
         {/* Heart ECG Wave Overlay Mesh */}
