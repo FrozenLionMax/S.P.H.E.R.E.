@@ -21,6 +21,8 @@ interface MetricCardProps {
   warnAt?: string;
   critAt?: string;
   crisis?: boolean;
+  highlighted?: boolean;
+  onClick?: () => void;
 }
 
 export default function MetricCard({
@@ -35,7 +37,9 @@ export default function MetricCard({
   max,
   warnAt,
   critAt,
-  crisis
+  crisis,
+  highlighted = false,
+  onClick
 }: MetricCardProps) {
   const color = STATUS[status];
   const prev = useRef(value);
@@ -70,10 +74,13 @@ export default function MetricCard({
   return (
     <GlassPanel
       tilt={true}
-      className={`relative rounded-xl overflow-hidden transition-all duration-300 ${isAnomaly ? 'anomaly-glow' : ''}`}
+      className={`relative rounded-xl overflow-hidden transition-all duration-300 ${isAnomaly ? 'anomaly-glow' : ''} ${onClick ? 'cursor-pointer active:scale-[0.98]' : ''}`}
+      onClick={onClick}
       style={{
-        borderColor: status === 'ok' ? 'var(--border)' : flash ? color : color + '40',
-        boxShadow: status === 'ok' ? '' : `inset 0 0 20px ${color}10`,
+        borderColor: highlighted ? color : (status === 'ok' ? 'var(--border)' : flash ? color : color + '40'),
+        boxShadow: highlighted 
+          ? `0 0 15px ${color}33, inset 0 0 20px ${color}15` 
+          : (status === 'ok' ? '' : `inset 0 0 20px ${color}10`),
       }}
     >
       <div

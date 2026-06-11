@@ -23,6 +23,14 @@ import OnboardingScreen from '@/components/OnboardingScreen';
 import DashboardHeader from '@/components/DashboardHeader';
 import Sidebar from '@/components/Sidebar';
 import LazyDigitalTwinScene from '@/components/LazyDigitalTwinScene';
+import { useTelemetryStore } from '@/lib/useTelemetryStore';
+
+function getOrganForMetricKey(key: string): 'none' | 'heart' | 'lungs' | 'brain' {
+  if (['heartRate', 'bpm', 'pwtt'].includes(key)) return 'heart';
+  if (['spO2', 'transthoracicImpedance', 'pCO2', 'suitPressure'].includes(key)) return 'lungs';
+  if (['perclos', 'fatigueIndex', 'tremorAmplitude', 'tremorFreq', 'alertness', 'cognitiveLatency'].includes(key)) return 'brain';
+  return 'none';
+}
 
 export default function Page() {
   const router = useRouter();
@@ -43,6 +51,11 @@ export default function Page() {
   const [activeTrackKey, setActiveTrackKey] = useState<TrackKey>('PILOT');
   const [mounted, setMounted] = useState(false);
   const [isOnboarded, setIsOnboarded] = useState(false);
+
+  // Zustand state triggers for 3D Hologram interaction
+  const selectedOrgan = useTelemetryStore((s) => s.selectedOrgan);
+  const setSelectedOrgan = useTelemetryStore((s) => s.setSelectedOrgan);
+  const updateTelemetryFrame = useTelemetryStore((s) => s.updateTelemetryFrame);
 
   useEffect(() => {
     setMounted(true);
@@ -453,6 +466,28 @@ export default function Page() {
 
   const events = [{ time: clock, label: trackConf.title, color: trackConf.themeColor }];
 
+  // Sync live telemetry variables to the 3D hologram's global Zustand store
+  useEffect(() => {
+    if (last) {
+      updateTelemetryFrame({
+        bpm: hr || 72,
+        oxygenSaturation: spo2 || 98,
+        brainwaveFrequency: activeTrackKey === 'SURGEON'
+          ? (last.tremorFreq || 2.1) * 3.5
+          : activeTrackKey === 'TRAIN_PILOT'
+            ? (100 - (last.perclos || 0)) / 6
+            : activeTrackKey === 'TRUCKER'
+              ? (last.alertness ?? 96) / 8
+              : 12.5 + (Math.sin(samples.length * 0.1) * 2),
+        glucose: activeTrackKey === 'TRUCKER'
+          ? (last.alertness ?? 96) * 1.25
+          : activeTrackKey === 'ASTRONAUT'
+            ? (last.pCO2 ?? 2.5) * 35
+            : 90 + (Math.sin(samples.length * 0.05) * 15)
+      });
+    }
+  }, [last, hr, spo2, activeTrackKey, updateTelemetryFrame, samples.length]);
+
   if (!mounted) return null;
 
   if (!isOnboarded) {
@@ -581,6 +616,7 @@ export default function Page() {
               {PROFILE_METRICS[activeTrackKey].map((m) => {
                 const val = (last as any)[m.key] !== undefined ? (last as any)[m.key] : 0;
                 const statusVal = classify(val, parseFloat(m.warnAt), parseFloat(m.critAt), m.key === 'spO2' || m.key === 'suitPressure' || m.key === 'alertness' || m.key === 'v2vLink' || m.key === 'gripForce' ? 'lo' : 'hi');
+                const cardOrgan = getOrganForMetricKey(m.key);
                 return (
                   <MetricCard
                     key={m.label}
@@ -596,6 +632,10 @@ export default function Page() {
                     warnAt={m.warnAt}
                     critAt={m.critAt}
                     crisis={crisis}
+                    highlighted={cardOrgan !== 'none' && selectedOrgan === cardOrgan}
+                    onClick={cardOrgan !== 'none' ? () => {
+                      setSelectedOrgan(selectedOrgan === cardOrgan ? 'none' : cardOrgan);
+                    } : undefined}
                   />
                 );
               })}

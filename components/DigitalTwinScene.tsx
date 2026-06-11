@@ -322,9 +322,16 @@ function PulsingVascularLine({ points, color, baseWidth = 0.8, baseOpacity = 0.6
 // ─────────────────────────────────────────────────────────────────────────────
 // Hyperrealistic Procedural Heart & Aorta Components
 // ─────────────────────────────────────────────────────────────────────────────
-const ProceduralHeart = React.forwardRef<THREE.Mesh, { color: THREE.Color, emissiveIntensity: number }>((props, ref) => {
-  const { color, emissiveIntensity } = props
-  const materialRef = useRef<THREE.MeshStandardMaterial>(null)
+const ProceduralHeart = React.forwardRef<
+  THREE.Mesh,
+  {
+    color: THREE.Color
+    emissiveIntensity: number
+    opacity: number
+    materialRef: React.RefObject<THREE.MeshStandardMaterial | null>
+  }
+>((props, ref) => {
+  const { color, emissiveIntensity, opacity, materialRef } = props
   
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
@@ -392,7 +399,7 @@ const ProceduralHeart = React.forwardRef<THREE.Mesh, { color: THREE.Color, emiss
       <meshStandardMaterial
         ref={materialRef}
         transparent
-        opacity={0.8}
+        opacity={opacity}
         roughness={0.4}
         metalness={0.3}
         blending={THREE.AdditiveBlending}
@@ -402,7 +409,7 @@ const ProceduralHeart = React.forwardRef<THREE.Mesh, { color: THREE.Color, emiss
   )
 })
 
-function AortaTube() {
+function AortaTube({ opacity }: { opacity: number }) {
   const curve = useMemo(() => {
     return new THREE.CatmullRomCurve3([
       new THREE.Vector3(0, 0.1, 0),
@@ -455,7 +462,7 @@ function AortaTube() {
         emissive="#ff2b56"
         emissiveIntensity={1.5}
         transparent
-        opacity={0.8}
+        opacity={opacity}
         roughness={0.3}
         onBeforeCompile={onBeforeCompile}
       />
@@ -515,7 +522,7 @@ function VascularBloodflow({ points, count = 15, color = '#ff9900' }: { points: 
 // ─────────────────────────────────────────────────────────────────────────────
 // Physiological Lung Morphing Component
 // ─────────────────────────────────────────────────────────────────────────────
-function PhysiologicalLung({ position, isLeft, color, emissiveIntensity }: { position: [number, number, number], isLeft: boolean, color: THREE.Color, emissiveIntensity: number }) {
+function PhysiologicalLung({ position, isLeft, color, emissiveIntensity, opacity }: { position: [number, number, number], isLeft: boolean, color: THREE.Color, emissiveIntensity: number, opacity: number }) {
   const materialRef = useRef<THREE.MeshStandardMaterial>(null)
   
   const uniforms = useMemo(() => ({
@@ -526,7 +533,8 @@ function PhysiologicalLung({ position, isLeft, color, emissiveIntensity }: { pos
     const elapsed = state.clock.elapsedTime
     const liveOxygen = useTelemetryStore.getState().liveTelemetryFrame.oxygenSaturation
     
-    const respRate = 9 // Pulmonary distress compensation rate
+    // Dynamic respiratory rate scaling based on oxygen saturation (hypoxia distress tachypnea)
+    const respRate = 12 + (100 - liveOxygen) * 0.8
     const breathDuration = 60 / respRate
     const respPhase = ((elapsed / breathDuration) * Math.PI * 2)
     const breathingFactor = Math.sin(respPhase)
@@ -537,6 +545,7 @@ function PhysiologicalLung({ position, isLeft, color, emissiveIntensity }: { pos
 
     if (materialRef.current) {
       materialRef.current.emissiveIntensity = emissiveIntensity
+      materialRef.current.opacity = opacity
       materialRef.current.color.copy(color)
       materialRef.current.emissive.copy(color)
     }
@@ -574,7 +583,7 @@ function PhysiologicalLung({ position, isLeft, color, emissiveIntensity }: { pos
         ref={materialRef}
         wireframe
         transparent
-        opacity={0.7}
+        opacity={opacity}
         roughness={0.8}
         metalness={0.1}
         blending={THREE.AdditiveBlending}
@@ -821,7 +830,7 @@ function HologramScene() {
     }
 
     // 2. Lungs Material Updates (Scale and Expansion now handled inside PhysiologicalLung shader)
-    const respRate = 9 // Pulmonary distress compensation rate
+    const respRate = 12 + (100 - liveOxygen) * 0.8
     const breathDuration = 60 / respRate
     const respPhase = ((elapsed / breathDuration) * Math.PI * 2)
     const breathingFactor = Math.sin(respPhase)
@@ -862,11 +871,11 @@ function HologramScene() {
       liverMeshRef.current.scale.set(liverScale, liverScale, liverScale)
     }
 
-    // 5. Synaptic Particle Emitter — delta-scaled, smooth burst modulation
+    // 5. Synaptic Particle Emitter — delta-scaled, smooth burst modulation tied to EEG frequency
     if (brainPointsRef.current) {
       const positions = brainPointsRef.current.geometry.attributes.position.array as Float32Array
       const speeds    = brainParticlesData.speeds
-      const burst     = 1.0 + Math.sin(elapsed * 5) * 0.4  // smooth wave, no random
+      const burst     = (1.0 + Math.sin(elapsed * (liveBrainFreq * 0.4)) * 0.4) * (liveBrainFreq / 12.5)
       for (let i = 0; i < brainParticlesCount; i++) {
         positions[i * 3]     += speeds[i * 3]     * delta * burst
         positions[i * 3 + 1] += speeds[i * 3 + 1] * delta * burst
@@ -973,7 +982,12 @@ function HologramScene() {
       <Line points={[[0, -0.1, -0.05], [0.2, -0.25, 0], [0.24, -1.0, 0], [0.25, -1.7, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
 
       {/* 5. BRAIN Mesh - Dedicated */}
-      <group position={[0, 1.4, 0]} onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('brain') }}>
+      <group 
+        position={[0, 1.4, 0]} 
+        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('brain') }}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor('pointer') }}
+        onPointerOut={(e) => { e.stopPropagation(); setCursor('auto') }}
+      >
         <mesh ref={brainMeshRef}>
           <icosahedronGeometry args={[0.22, 2]} />
           <meshStandardMaterial
@@ -1023,11 +1037,15 @@ function HologramScene() {
       </group>
 
       {/* 6. LUNGS Meshes & Inner Branching Bronchial Airway Trees - Dedicated */}
-      <group onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('lungs') }}>
+      <group 
+        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('lungs') }}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor('pointer') }}
+        onPointerOut={(e) => { e.stopPropagation(); setCursor('auto') }}
+      >
         {/* Left Lung Lobe */}
-        <PhysiologicalLung position={[-0.24, 0.5, 0.02]} isLeft={true} color={lungColor.current} emissiveIntensity={1.0} />
+        <PhysiologicalLung position={[-0.24, 0.5, 0.02]} isLeft={true} color={lungColor.current} emissiveIntensity={1.0} opacity={targetLungOpacity} />
         {/* Right Lung Lobe */}
-        <PhysiologicalLung position={[0.24, 0.5, 0.02]} isLeft={false} color={lungColor.current} emissiveIntensity={1.0} />
+        <PhysiologicalLung position={[0.24, 0.5, 0.02]} isLeft={false} color={lungColor.current} emissiveIntensity={1.0} opacity={targetLungOpacity} />
 
         {/* Bronchial Airways Lobe Left */}
         <group position={[-0.24, 0.5, 0.02]} scale={[0.85, 0.85, 0.85]}>
@@ -1080,22 +1098,19 @@ function HologramScene() {
       </group>
 
       {/* 7. HEART Mesh with pulsing Aorta pipe - Dedicated */}
-      <group position={[-0.08, 0.46, 0.09]} onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('heart') }}>
-        <mesh ref={heartMeshRef} rotation={[0.15, 0, 0.2]}>
-          <octahedronGeometry args={[0.13, 2]} />
-          <meshStandardMaterial
-            ref={heartMatRef}
-            wireframe
-            transparent
-            opacity={0.7}
-            color="#ff2b56"
-            emissive="#ff2b56"
-            emissiveIntensity={1.0}
-            blending={THREE.AdditiveBlending}
-            roughness={0.8}
-            metalness={0.1}
-          />
-        </mesh>
+      <group 
+        position={[-0.08, 0.46, 0.09]} 
+        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('heart') }}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor('pointer') }}
+        onPointerOut={(e) => { e.stopPropagation(); setCursor('auto') }}
+      >
+        <ProceduralHeart
+          ref={heartMeshRef}
+          materialRef={heartMatRef}
+          color={heartColor.current}
+          emissiveIntensity={heartEmissive}
+          opacity={targetHeartOpacity}
+        />
         {/* Heart ECG Wave Overlay Mesh */}
         <mesh ref={heartWaveMeshRef} rotation={[0.15, 0, 0.2]}>
           <torusKnotGeometry args={[0.17, 0.02, 64, 8, 3, 4]} />
@@ -1103,17 +1118,15 @@ function HologramScene() {
             ref={heartWaveMatRef}
             wireframe
             transparent
-            opacity={0.6}
+            opacity={0.6 * targetHeartOpacity}
             color="#ff2b56"
             blending={THREE.AdditiveBlending}
           />
         </mesh>
-        {/* Pulsing Aorta Arc tube */}
-        <mesh position={[0, 0.09, 0.01]} rotation={[0, 0, -Math.PI / 4]}>
-          <torusGeometry args={[0.045, 0.015, 8, 16, Math.PI]} />
-          <meshStandardMaterial color="#ff2b56" roughness={0.5} />
-        </mesh>
       </group>
+      
+      {/* Pulsing Aorta Arc tube with dynamic traveling bulge */}
+      <AortaTube opacity={targetHeartOpacity} />
 
       {/* 8. LIVER Mesh (Abdomen Right Lobe) - Dedicated */}
       <mesh
