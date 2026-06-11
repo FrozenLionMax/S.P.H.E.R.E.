@@ -91,16 +91,16 @@ export default function MetricCard({
         }}
       />
 
-      <div className="flex items-start justify-between px-4 pt-4 pb-2">
+      <div className="flex items-start justify-between px-3.5 pt-3 pb-1">
         <div>
           <p className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>
             {label}
           </p>
-          <p className="text-[10px]" style={{ color: C.subtle }}>{sublabel}</p>
+          <p className="text-[9.5px]" style={{ color: C.subtle }}>{sublabel}</p>
         </div>
-        <div className="flex flex-col gap-2 items-end">
+        <div className="flex flex-col gap-1.5 items-end">
           <motion.div
-            className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-[9px] font-mono tracking-widest uppercase mt-0.5"
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[8px] font-mono tracking-widest uppercase mt-0.5"
             style={{
               background: color + '15',
               border: `1px solid ${color}30`,
@@ -114,7 +114,7 @@ export default function MetricCard({
           </motion.div>
           {isAnomaly && (
             <motion.div
-              className="px-2 py-0.5 rounded-sm text-[8px] font-mono tracking-widest font-bold"
+              className="px-1.5 py-0.5 rounded-sm text-[7.5px] font-mono tracking-widest font-bold"
               style={{
                 background: 'rgba(245, 158, 11, 0.12)',
                 color: '#f59e0b',
@@ -129,29 +129,29 @@ export default function MetricCard({
         </div>
       </div>
 
-      <div className="px-4 pb-1 flex items-baseline gap-2">
-        <span className="text-[38px] leading-none font-mono font-semibold tracking-tight tabular-nums" style={{ color }}>
+      <div className="px-3.5 pb-0.5 flex items-baseline gap-2">
+        <span className="text-[32px] leading-none font-mono font-semibold tracking-tight tabular-nums" style={{ color }}>
           <AnimatedValue value={value} precision={precision} />
         </span>
-        <span className="text-[12px] font-mono mb-1" style={{ color: C.subtle }}>{unit}</span>
+        <span className="text-[11px] font-mono mb-1" style={{ color: C.subtle }}>{unit}</span>
       </div>
 
       {(warnAt || critAt) && (
-        <div className="flex items-center gap-3 px-4 pb-2">
+        <div className="flex items-center gap-2.5 px-3.5 pb-1.5">
           {warnAt && (
-            <span className="text-[9px] font-mono" style={{ color: C.amber }}>
+            <span className="text-[8.5px] font-mono" style={{ color: C.amber }}>
               warn {warnAt}
             </span>
           )}
           {critAt && (
-            <span className="text-[9px] font-mono" style={{ color: C.red }}>
+            <span className="text-[8.5px] font-mono" style={{ color: C.red }}>
               crit {critAt}
             </span>
           )}
         </div>
       )}
 
-      <div className="px-0 pb-0 shadow-[inset_0_-10px_20px_-10px_rgba(0,0,0,0.5)]" style={{ height: 56 }}>
+      <div className="px-0 pb-0 shadow-[inset_0_-10px_20px_-10px_rgba(0,0,0,0.5)]" style={{ height: 38 }}>
         {mounted ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
             <AreaChart data={pts} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>

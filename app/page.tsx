@@ -22,7 +22,7 @@ import TrackVisualizer, { Gyroscope, HBar } from '@/components/TrackVisualizer';
 import OnboardingScreen from '@/components/OnboardingScreen';
 import DashboardHeader from '@/components/DashboardHeader';
 import Sidebar from '@/components/Sidebar';
-import LazyDigitalTwinScene from '@/components/LazyDigitalTwinScene';
+import TelemetryConsole from '@/components/TelemetryConsole';
 import { useTelemetryStore } from '@/lib/useTelemetryStore';
 
 function getOrganForMetricKey(key: string): 'none' | 'heart' | 'lungs' | 'brain' {
@@ -134,7 +134,6 @@ export default function Page() {
     { id: 0, time: nowTime(), level: 'SYS', msg: 'Kernel v4.2.1 initialized.' },
   ]);
 
-  const logEnd = useRef<HTMLDivElement>(null);
   const [clock, setClock] = useState(nowTime());
   const prevCrisis = useRef(false);
 
@@ -142,10 +141,6 @@ export default function Page() {
     const t = setInterval(() => setClock(nowTime()), 1000);
     return () => clearInterval(t);
   }, []);
-
-  useEffect(() => {
-    logEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [localLogs.length]);
 
   useEffect(() => {
     if (!audioEnabled || !audioCtx) return;
@@ -641,65 +636,66 @@ export default function Page() {
               })}
             </div>
 
-            {/* Reorganized Dashboard Grid: Left tall column for 3D Biometric Matrix, right column for stacked widgets */}
+            {/* Reorganized Dashboard Grid: Left tall column for Autonomous Telemetry Console, right column for stacked widgets */}
             <div className="grid gap-3 grid-cols-1 lg:grid-cols-[380px_1fr]">
-              {/* Left Column: 3D Biometric Matrix */}
-              <GlassPanel className="rounded-xl overflow-hidden relative flex flex-col h-full" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
+              {/* Left Column: Autonomous Console (SPO2, HR, ENV, LAT + Logs) */}
+              <GlassPanel className="rounded-xl overflow-hidden relative flex flex-col h-[460px] min-h-[460px] max-h-[460px]" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                 <div className="flex items-center justify-between px-4 py-3 shrink-0 relative z-10" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}>
                   <div className="flex items-center gap-4">
-                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>3D Biometric Matrix</span>
+                    <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Autonomous Console</span>
                   </div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+                  <div className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm" style={{ background: 'rgba(0,229,153,0.07)', color: C.green, border: '1px solid rgba(0,229,153,0.15)' }}>LIVE</div>
                 </div>
                 
-                {/* 3D Hologram slot - Lazy loaded, flex-1 to occupy maximum available vertical space */}
-                <div className="flex-1 w-full min-h-[360px] relative z-0">
-                  <LazyDigitalTwinScene transparent={true} />
-                </div>
-                
-                {/* Embedded Proceed Button */}
-                <div className="p-3 bg-black/40 border-t border-white/5 backdrop-blur-md shrink-0 relative z-10">
-                  <a 
-                    href={`/digital-twin`}
-                    className="flex w-full items-center justify-center py-2 text-[9px] font-mono font-bold tracking-[0.15em] uppercase rounded-sm border transition-all duration-300 hover:brightness-125"
-                    style={{
-                      background: `linear-gradient(90deg, ${trackConf.themeColor}15, ${trackConf.themeColor}25)`,
-                      borderColor: `rgba(255,255,255,0.1)`,
-                      color: C.fg,
-                      boxShadow: `0 0 10px ${trackConf.themeColor}10`
-                    }}
-                  >
-                    PROCEED TO 3D DIGITAL TWIN ➔
-                  </a>
+                <div className="flex-1 w-full relative z-0 overflow-hidden">
+                  <TelemetryConsole
+                    activeTrackKey={activeTrackKey}
+                    trackConf={trackConf}
+                    crisis={crisis}
+                    spo2St={spo2St}
+                    hrSt={hrSt}
+                    envSt={envSt}
+                    latSt={latSt}
+                    tempSt={tempSt}
+                    pressureSt={pressureSt}
+                    spo2={spo2}
+                    hr={hr}
+                    envMetric={envMetric}
+                    lat={lat}
+                    temp={temp}
+                    pressure={pressure}
+                    healthScore={healthScore}
+                    localLogs={localLogs}
+                  />
                 </div>
               </GlassPanel>
 
               {/* Right Column: Other Widgets stacked in smaller spaces */}
-              <div className="flex flex-col gap-3 justify-between">
+              <div className="flex flex-col gap-2.5">
                 {/* Vitals Trend and Cardiac Waveform */}
-                <div className="grid gap-3 grid-cols-1 xl:grid-cols-[1fr_420px]">
+                <div className="grid gap-2.5 grid-cols-1 xl:grid-cols-[1fr_420px]">
                   <GlassPanel className="rounded-xl overflow-hidden" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                    <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
                       <div className="flex items-center gap-4">
                         <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Vitals Trend</span>
                       </div>
                     </div>
-                    <div style={{ height: 120, padding: '8px 0 0', position: 'relative', width: '100%', minWidth: 0 }}>
+                    <div style={{ height: 100, padding: '4px 0 0', position: 'relative', width: '100%', minWidth: 0 }}>
                       <VitalsChart samples={samples} />
                     </div>
                   </GlassPanel>
 
                   <GlassPanel className="rounded-xl overflow-hidden flex flex-col" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                    <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
                       <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Cardiac Waveform (ECG)</span>
                       <span className="text-[8px] font-mono font-bold tracking-wider" style={{ color: crisis ? C.red : C.green }}>LIVE SCANNER</span>
                     </div>
-                    <div className="flex-1 flex items-center justify-center p-3 bg-black">
+                    <div className="flex-1 flex items-center justify-center p-2 bg-black">
                       <ECG
                         crisis={crisis}
                         hr={hr}
                         width={396}
-                        height={96}
+                        height={76}
                         glow={true}
                         audioEnabled={audioEnabled}
                         sound={true}
@@ -712,12 +708,12 @@ export default function Page() {
                 </div>
 
                 {/* Sensor Hardware and Subsystems */}
-                <div className="grid gap-3 grid-cols-1 xl:grid-cols-2">
-                  <GlassPanel className="rounded-xl p-4 flex flex-col gap-3" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
+                <div className="grid gap-2.5 grid-cols-1 xl:grid-cols-2">
+                  <GlassPanel className="rounded-xl p-3.5 flex flex-col gap-2.5" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                     <SectionLabel>Sensor Hardware</SectionLabel>
                     <TrackVisualizer trackKey={activeTrackKey} crisis={crisis} lastSample={last} />
                     {PROFILE_HARDWARE[activeTrackKey].map((h, i) => (
-                      <div key={i} className="flex flex-col gap-1">
+                      <div key={i} className="flex flex-col gap-0.5">
                         <div className="flex items-center justify-between">
                           <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>
                             {h.label}
@@ -739,10 +735,10 @@ export default function Page() {
                   </GlassPanel>
 
                   <GlassPanel className="rounded-xl overflow-hidden flex flex-col justify-between" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                    <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                    <div className="px-4 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
                       <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Subsystems</span>
                     </div>
-                    <div className="flex flex-col justify-center gap-2.5 p-4 flex-1">
+                    <div className="flex flex-col justify-center gap-2 p-3.5 flex-1">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px]" style={{ color: C.fg }}>Neural Interface</span>
                         <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>{crisis ? 'DEGRADED' : 'ONLINE'}</span>
@@ -759,7 +755,7 @@ export default function Page() {
                         <span className="text-[10px]" style={{ color: C.fg }}>Cognitive Proc.</span>
                         <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.red : C.green }}>{crisis ? 'CRITICAL' : 'ONLINE'}</span>
                       </div>
-                      <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-0.5">
+                      <div className="flex items-center justify-between border-t border-white/5 pt-1.5 mt-0.5">
                         <span className="text-[10px]" style={{ color: C.fg }}>Atmos Monitor</span>
                         <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.red : C.green }}>{crisis ? 'CRITICAL' : 'ONLINE'}</span>
                       </div>
@@ -775,23 +771,6 @@ export default function Page() {
           activeTrackKey={activeTrackKey}
           trackConf={trackConf}
           crisis={crisis}
-          spo2St={spo2St}
-          hrSt={hrSt}
-          envSt={envSt}
-          latSt={latSt}
-          tempSt={tempSt}
-          pressureSt={pressureSt}
-          spo2={spo2}
-          hr={hr}
-          envMetric={envMetric}
-          lat={lat}
-          temp={temp}
-          pressure={pressure}
-          healthScore={healthScore}
-          localLogs={localLogs}
-          setLocalLogs={setLocalLogs}
-          logEnd={logEnd}
-          events={events}
           executeSubsystem={executeSubsystem}
           triggerCrisisMode={triggerCrisisMode}
           resolveCrisisMode={resolveCrisisMode}
@@ -799,6 +778,12 @@ export default function Page() {
           startDemo={startDemo}
           handleCaptureScreenshot={handleCaptureScreenshot}
           connected={connected}
+          onClearLogs={() => setLocalLogs([])}
+          last={last}
+          temp={temp}
+          pressure={pressure}
+          tempSt={tempSt}
+          pressureSt={pressureSt}
         />
       </div>
 
