@@ -59,7 +59,8 @@ export function useTelemetry() {
   useEffect(() => {
     // Instantiate persistent WebSocket connection
     const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-    const ws = new WebSocket(`ws://${host}:8080`);
+    const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
+    const ws = new WebSocket(`ws://${host}:${port}`);
     wsRef.current = ws;
 
     ws.onopen = () => {

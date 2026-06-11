@@ -1,3 +1,12 @@
+try {
+  const { loadEnvFile } = require('process');
+  if (typeof loadEnvFile === 'function') {
+    loadEnvFile();
+  }
+} catch (e) {
+  // Safe fallback when .env is absent or older node version
+}
+
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const http = require('http');
@@ -521,7 +530,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', track: state.activeTrack, crisis: state.isCrisisActive });
 });
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.NEXT_PUBLIC_WS_PORT || process.env.PORT || 8080;
 server.listen(PORT, () => {
   console.log(`[S.P.H.E.R.E. Engine] WebSocket server running on port ${PORT}`);
 });

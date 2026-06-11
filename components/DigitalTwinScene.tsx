@@ -1280,7 +1280,8 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
   useEffect(() => {
     if (!transparent) {
       const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-      const wsUrl = `ws://${host}:8080/diabetes`
+      const port = process.env.NEXT_PUBLIC_WS_PORT || '8080'
+      const wsUrl = `ws://${host}:${port}/diabetes`
       useTelemetryStore.getState().disconnectFromTelemetry()
       useTelemetryStore.getState().connectToTelemetry(wsUrl)
       return () => {
