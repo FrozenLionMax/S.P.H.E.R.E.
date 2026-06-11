@@ -276,10 +276,10 @@ wss.on('connection', (ws, req) => {
   const pathname = urlObj.pathname.replace(/\/$/, '').toLowerCase();
   const queryMode = urlObj.searchParams.get('mode') || urlObj.searchParams.get('simulation');
   
-  // Detect simulation mode (cardiac, respiratory, or neurological) from route token or query param
-  const simulationMode = (pathname === '/cardiac' || pathname === '/respiratory' || pathname === '/neurological') 
+  // Detect simulation mode (cardiac, respiratory, neurological, or diabetes) from route token or query param
+  const simulationMode = (pathname === '/cardiac' || pathname === '/respiratory' || pathname === '/neurological' || pathname === '/diabetes') 
     ? pathname.slice(1) 
-    : (['cardiac', 'respiratory', 'neurological'].includes(queryMode) ? queryMode : null);
+    : (['cardiac', 'respiratory', 'neurological', 'diabetes'].includes(queryMode) ? queryMode : null);
 
   if (simulationMode) {
     console.log(`[WS] Client connected for high-fidelity simulation: ${simulationMode}`);
@@ -311,12 +311,15 @@ wss.on('connection', (ws, req) => {
         const amplitude = getECGValue(phase) + (Math.random() - 0.5) * 0.03;
         // Check if current phase is within the R-peak spike window
         const rPeakDetected = phase >= 0.145 && phase < 0.165;
+        const glucose = 110 + Math.sin(now / 15000) * 5 + (Math.random() - 0.5) * 2;
 
         payload = {
           type: 'cardiac',
           timestamp: now,
           bpm: parseFloat(bpm.toFixed(1)),
           amplitude: parseFloat(amplitude.toFixed(4)),
+          oxygenSaturation: 98.4,
+          glucose: parseFloat(glucose.toFixed(1)),
           rPeakDetected
         };
       } else if (simulationMode === 'respiratory') {
@@ -327,14 +330,17 @@ wss.on('connection', (ws, req) => {
 
         // Oscillating lung capacity (sinusoidal)
         const lungCapacity = 2.5 + Math.sin(phase * Math.PI * 2) * 1.2 + (Math.random() - 0.5) * 0.04;
-        const oxygenSaturation = 98.2 + Math.sin(now / 12000) * 0.6 + (Math.random() - 0.5) * 0.1;
+        const oxygenSaturation = 92.5 + Math.sin(now / 12000) * 0.6 + (Math.random() - 0.5) * 0.1;
+        const glucose = 280 + Math.sin(now / 10000) * 6 + (Math.random() - 0.5) * 3;
 
         payload = {
           type: 'respiratory',
           timestamp: now,
+          bpm: 82.0,
           respiratoryRate: parseFloat(respRate.toFixed(1)),
           lungCapacity: parseFloat(lungCapacity.toFixed(4)),
-          oxygenSaturation: parseFloat(oxygenSaturation.toFixed(2))
+          oxygenSaturation: parseFloat(oxygenSaturation.toFixed(2)),
+          glucose: parseFloat(glucose.toFixed(1))
         };
       } else if (simulationMode === 'neurological') {
         const seizureActive = true;
@@ -349,13 +355,30 @@ wss.on('connection', (ws, req) => {
           const noise = (Math.random() - 0.5) * (seizureActive ? 1.5 : 0.2);
           return parseFloat((base + noise).toFixed(4));
         });
+        const glucose = 115 + Math.sin(now / 12000) * 5 + (Math.random() - 0.5) * 2;
 
         payload = {
           type: 'neurological',
           timestamp: now,
+          bpm: 110.0,
           brainwaveFrequency: parseFloat(brainwaveFrequency.toFixed(1)),
           eegArray,
+          oxygenSaturation: 92.2,
+          glucose: parseFloat(glucose.toFixed(1)),
           seizureActive
+        };
+      } else if (simulationMode === 'diabetes') {
+        // Fluctuating high glucose value matching a diabetic spike
+        const glucose = 260 + Math.sin(now / 5000) * 15 + (Math.random() - 0.5) * 4;
+        const oxygenSaturation = 92.5 + Math.sin(now / 10000) * 0.5 + (Math.random() - 0.5) * 0.1;
+        const bpm = 88 + Math.sin(now / 6000) * 3 + (Math.random() - 0.5) * 1.0;
+
+        payload = {
+          type: 'diabetes',
+          timestamp: now,
+          bpm: parseFloat(bpm.toFixed(1)),
+          oxygenSaturation: parseFloat(oxygenSaturation.toFixed(2)),
+          glucose: parseFloat(glucose.toFixed(1))
         };
       }
 

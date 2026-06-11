@@ -10,10 +10,11 @@ export interface TelemetryDataFrame {
   bpm: number
   oxygenSaturation: number // SpO2 in %
   brainwaveFrequency: number // EEG speed index in Hz
+  glucose: number // Blood glucose in mg/dL
   deviceStatus: 'nominal' | 'warning' | 'critical' | 'offline'
 }
 
-export type ConditionType = 'general' | 'arrhythmia' | 'asthma' | 'epilepsy' | 'cardiac' | 'respiratory' | 'neurological'
+export type ConditionType = 'general' | 'arrhythmia' | 'asthma' | 'epilepsy' | 'cardiac' | 'respiratory' | 'neurological' | 'diabetes'
 
 export interface TelemetryStoreState {
   // --- Global States ---
@@ -46,6 +47,7 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
     bpm: 72,
     oxygenSaturation: 98,
     brainwaveFrequency: 12,
+    glucose: 120,
     deviceStatus: 'nominal'
   },
   websocketStatus: 'idle',
@@ -105,12 +107,14 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
           const rawBpm = payload.heartRate ?? payload.bpm ?? 72
           const rawSpo2 = payload.spO2 ?? payload.oxygenSaturation ?? 98
           const rawEeg = payload.eegFreq ?? payload.brainwaveFrequency ?? 12
+          const rawGlucose = payload.glucose ?? 120
           const rawStatus = payload.deviceStatus ?? (payload.crisis ? 'critical' : 'nominal')
 
           // Boundaries clamp: prevent division by zero or NaN values from breaking WebGL coordinates
           const bpm = Math.max(20, Math.min(250, Number(rawBpm) || 72))
           const oxygenSaturation = Math.max(0, Math.min(100, Number(rawSpo2) || 98))
           const brainwaveFrequency = Math.max(0.1, Math.min(150, Number(rawEeg) || 12))
+          const glucose = Math.max(10, Math.min(1000, Number(rawGlucose) || 120))
           const deviceStatus = ['nominal', 'warning', 'critical', 'offline'].includes(rawStatus)
             ? rawStatus as TelemetryDataFrame['deviceStatus']
             : 'nominal'
@@ -121,6 +125,7 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
               bpm,
               oxygenSaturation,
               brainwaveFrequency,
+              glucose,
               deviceStatus
             }
           })
@@ -190,6 +195,7 @@ export const useBpm = () => useTelemetryStore((s) => s.liveTelemetryFrame.bpm)
 export const useOxygenSaturation = () => useTelemetryStore((s) => s.liveTelemetryFrame.oxygenSaturation)
 export const useBrainwaveFrequency = () => useTelemetryStore((s) => s.liveTelemetryFrame.brainwaveFrequency)
 export const useDeviceStatus = () => useTelemetryStore((s) => s.liveTelemetryFrame.deviceStatus)
+export const useGlucose = () => useTelemetryStore((s) => s.liveTelemetryFrame.glucose)
 export const useCurrentCondition = () => useTelemetryStore((s) => s.currentCondition)
 export const useActiveUserProfile = () => useTelemetryStore((s) => s.activeUserProfile)
 export const useWebsocketStatus = () => useTelemetryStore((s) => s.websocketStatus)

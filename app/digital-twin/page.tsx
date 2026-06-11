@@ -32,8 +32,10 @@ const DigitalTwinScene = dynamic(() => import('@/components/DigitalTwinScene'), 
   )
 })
 
+import { useTelemetryStore } from '@/lib/useTelemetryStore'
+
 // Define medical conditions
-type ConditionKey = 'general' | 'arrhythmia' | 'asthma' | 'epilepsy'
+type ConditionKey = 'diabetes' | 'arrhythmia' | 'asthma' | 'epilepsy'
 
 interface ConditionInfo {
   name: string
@@ -43,30 +45,30 @@ interface ConditionInfo {
   bpm: number
   spo2: number
   resp: number
-  bp: string
+  glucose: number
   stress: number
   desc: string
   logs: string[]
 }
 
 const CONDITIONS: Record<ConditionKey, ConditionInfo> = {
-  general: {
-    name: 'General Checkup',
-    status: 'NOMINAL',
-    color: 'text-emerald-400 border-emerald-500/30',
-    hexColor: '#00ffaa',
-    bpm: 72,
-    spo2: 99,
-    resp: 14,
-    bp: '120/80',
-    stress: 12,
-    desc: 'System baseline nominal. Subject exhibits standard physiological homeostasis. All neural and cardiovascular links clear.',
+  diabetes: {
+    name: 'Diabetic Glucose Spike',
+    status: 'CRISIS',
+    color: 'text-amber-500 border-amber-500/30',
+    hexColor: '#ff9900',
+    bpm: 88,
+    spo2: 92,
+    resp: 16,
+    glucose: 260,
+    stress: 68,
+    desc: 'Systemic metabolic crisis detected. Elevated plasma glucose levels exceeding 260 mg/dL. Osmotic shift modeling active.',
     logs: [
-      'Establishing neural synapse connection... SUCCESS',
-      'Telemetry handshake complete: ID TWIN-908',
-      'System: Synapse link calibration nominal',
-      'Diagnostics: Brain wave alpha rhythm observed',
-      'Cardio: Regular sinus rhythm confirmed'
+      'WARNING: Elevated blood glucose levels detected (>250mg/dL)',
+      'Alert: Pancreatic metabolic throughput saturated',
+      'Diagnostics: Hyperosmolar state predicted',
+      'System: Auto-insulin titration loop activated',
+      'Status: Subcutaneous sensor link calibrated'
     ]
   },
   arrhythmia: {
@@ -77,7 +79,7 @@ const CONDITIONS: Record<ConditionKey, ConditionInfo> = {
     bpm: 138,
     spo2: 95,
     resp: 18,
-    bp: '142/95',
+    glucose: 280,
     stress: 76,
     desc: 'Critical cardiac instability detected. Ectopic pacemaking in ventricles observed. Visualizing erratic PQRST complex.',
     logs: [
@@ -91,12 +93,12 @@ const CONDITIONS: Record<ConditionKey, ConditionInfo> = {
   asthma: {
     name: 'Chronic Asthma',
     status: 'WARNING',
-    color: 'text-amber-500 border-amber-500/30',
-    hexColor: '#f59e0b',
+    color: 'text-cyan-400 border-cyan-500/30',
+    hexColor: '#00ccff',
     bpm: 84,
     spo2: 89,
     resp: 9,
-    bp: '128/84',
+    glucose: 280,
     stress: 54,
     desc: 'Compromised pulmonary ventilation. SpO2 critical threshold breached (<90%). Rhythmic respiration amplitude restriction.',
     logs: [
@@ -115,7 +117,7 @@ const CONDITIONS: Record<ConditionKey, ConditionInfo> = {
     bpm: 112,
     spo2: 92,
     resp: 24,
-    bp: '135/90',
+    glucose: 115,
     stress: 91,
     desc: 'Severe paroxysmal electrical discharge in cerebral cortex. Chaotic high-amplitude spike-and-wave EEG activity.',
     logs: [
@@ -137,7 +139,11 @@ interface Point3D {
 }
 
 export default function DigitalTwin() {
-  const [activeCondition, setActiveCondition] = useState<ConditionKey>('general')
+  const [activeCondition, setActiveCondition] = useState<ConditionKey>('diabetes')
+  const liveBpm = useTelemetryStore((s) => s.liveTelemetryFrame.bpm)
+  const liveSpo2 = useTelemetryStore((s) => s.liveTelemetryFrame.oxygenSaturation)
+  const liveGlucose = useTelemetryStore((s) => s.liveTelemetryFrame.glucose)
+
   const [showDropdown, setShowDropdown] = useState(false)
   const [audioEnabled, setAudioEnabled] = useState(false)
   const [isRotating, setIsRotating] = useState(true)
@@ -387,7 +393,7 @@ export default function DigitalTwin() {
     
     const updateGeometry = () => {
       switch (activeCondition) {
-        case 'general':
+        case 'diabetes':
           points = generateDNA()
           break
         case 'arrhythmia':
@@ -480,7 +486,7 @@ export default function DigitalTwin() {
       } else if (activeCondition === 'asthma') {
         // Slow lung expansion and retraction
         scalePulse = 1.0 + Math.sin(Date.now() * 0.001) * 0.15
-      } else if (activeCondition === 'general') {
+      } else if (activeCondition === 'diabetes') {
         // Baseline calm heartbeat pulse
         scalePulse = 1.0 + (Math.sin(Date.now() * 0.004) > 0.85 ? 0.07 : 0)
       } else if (activeCondition === 'epilepsy') {
@@ -543,7 +549,7 @@ export default function DigitalTwin() {
         // Draw connected mesh lines
         ctx.lineWidth = 0.75
         
-        if (activeCondition === 'general') {
+        if (activeCondition === 'diabetes') {
           // Connect DNA strands and draw horizontal base rungs
           const numPts = points.length
           ctx.globalAlpha = 0.4
@@ -794,7 +800,7 @@ export default function DigitalTwin() {
         if (Math.random() > 0.7) {
           eegVal += (Math.random() > 0.5 ? 1.4 : -1.4) // massive spike amplitude
         }
-      } else if (activeCondition === 'general') {
+      } else if (activeCondition === 'diabetes') {
         // Steady state relaxed Alpha rhythms (8-12Hz)
         eegVal = Math.sin(now * 0.035) * 0.15 + Math.cos(now * 0.015) * 0.1
       } else {
@@ -883,7 +889,7 @@ export default function DigitalTwin() {
         // Draw waveform path
         ctx.beginPath()
         ctx.lineWidth = 1.5
-        ctx.strokeStyle = activeCondition === 'general' ? '#00ffaa' : ch.color
+        ctx.strokeStyle = activeCondition === 'diabetes' ? '#ff9900' : ch.color
         
         let pathStarted = false
         for (let i = 0; i < bufferSize; i++) {
@@ -902,7 +908,7 @@ export default function DigitalTwin() {
         ctx.stroke()
 
         // Add a sweeping playhead marker dot at the right end
-        ctx.fillStyle = activeCondition === 'general' ? '#00ffaa' : ch.color
+        ctx.fillStyle = activeCondition === 'diabetes' ? '#ff9900' : ch.color
         ctx.shadowBlur = 4
         ctx.shadowColor = ctx.fillStyle
         ctx.beginPath()
@@ -1058,6 +1064,7 @@ export default function DigitalTwin() {
                     key={key}
                     onClick={() => {
                       setActiveCondition(key)
+                      useTelemetryStore.getState().setCurrentCondition(key)
                       setShowDropdown(false)
                     }}
                     className={`w-full text-left px-3 py-2 text-xs font-mono transition-colors hover:bg-emerald-500/10 cursor-pointer flex items-center justify-between ${
@@ -1096,7 +1103,7 @@ export default function DigitalTwin() {
               </div>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-bold font-mono text-slate-100">
-                  {CONDITIONS[activeCondition].bpm}
+                  {liveBpm}
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">BPM</span>
               </div>
@@ -1113,9 +1120,9 @@ export default function DigitalTwin() {
               </div>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className={`text-xl font-bold font-mono ${
-                  CONDITIONS[activeCondition].spo2 < 90 ? 'text-red-500 animate-pulse' : 'text-slate-100'
+                  liveSpo2 < 95 ? 'text-red-500 animate-pulse' : 'text-slate-100'
                 }`}>
-                  {CONDITIONS[activeCondition].spo2}
+                  {liveSpo2}%
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">%</span>
               </div>
@@ -1141,20 +1148,22 @@ export default function DigitalTwin() {
               </div>
             </div>
 
-            {/* Blood Pressure */}
+            {/* Blood Glucose */}
             <div className="p-3 rounded border border-white/5 bg-[#080d0a]/80 backdrop-blur-sm flex flex-col justify-between min-h-[75px]">
               <div className="flex items-center justify-between text-slate-500 font-mono text-[9px]">
-                <span>BLOOD PRESSURE</span>
-                <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                <span>BLOOD GLUCOSE</span>
+                <Shield className={`w-3.5 h-3.5 ${liveGlucose > 200 ? 'text-amber-500 animate-pulse' : 'text-emerald-400'}`} />
               </div>
               <div className="flex items-baseline gap-1 mt-1">
-                <span className="text-base font-bold font-mono text-slate-100">
-                  {CONDITIONS[activeCondition].bp}
+                <span className={`text-xl font-bold font-mono ${
+                  liveGlucose > 200 ? 'text-amber-500 animate-pulse' : 'text-slate-100'
+                }`}>
+                  {liveGlucose}
                 </span>
-                <span className="text-[8px] text-slate-500 font-mono">mmHg</span>
+                <span className="text-[9px] text-slate-500 font-mono">mg/dL</span>
               </div>
-              <div className="text-[8px] font-mono mt-1.5 text-slate-500">
-                LIMITS: 120/80
+              <div className="text-[8px] font-mono mt-1 text-slate-500">
+                LIMITS: 70 - 140 mg/dL
               </div>
             </div>
           </div>
@@ -1172,7 +1181,7 @@ export default function DigitalTwin() {
               <span className="font-semibold text-emerald-400">NODE_09X_LINKED</span>
               <span>RENDER: WIREFRAME_GL_SIM</span>
               <span>GEOMETRY: {
-                activeCondition === 'general' ? 'DOUBLE_HELIX_DNA' :
+                activeCondition === 'diabetes' ? '3D_HEPATIC_MESH' :
                 activeCondition === 'arrhythmia' ? '3D_CARDIO_MESH' :
                 activeCondition === 'asthma' ? '3D_PULMONARY_GRID' : '3D_CEREBRAL_LATTICE'
               }</span>
@@ -1215,6 +1224,48 @@ export default function DigitalTwin() {
             {/* 3D WebGL/Canvas */}
             <div className="flex-1 min-h-0 w-full relative">
               <DigitalTwinScene currentCondition={activeCondition} />
+
+              {/* Floating Conditions Selector Overlay (Top Right) */}
+              <div className="absolute top-4 right-4 z-10 w-44 p-3 rounded border border-white/10 bg-[#080d0a]/90 backdrop-blur-md font-mono flex flex-col gap-2.5 shadow-[0_4px_24px_rgba(0,0,0,0.8)] animate-fade-in">
+                <div className="flex flex-col gap-0.5 border-b border-white/5 pb-2">
+                  <span className="text-[9px] text-slate-500 font-semibold uppercase">USER ID: P89123</span>
+                  <span className="text-[10px] font-bold text-emerald-400 tracking-wider">CONDITIONS</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {(Object.keys(CONDITIONS) as ConditionKey[]).map((key) => {
+                    const cond = CONDITIONS[key]
+                    const isActive = activeCondition === key
+                    let btnColor = 'border-red-500/30 text-red-500 hover:bg-red-500/10'
+                    let activeBtnColor = 'border-red-500 bg-red-500/20 text-red-400 font-semibold shadow-[0_0_8px_rgba(239,68,68,0.2)]'
+                    if (key === 'asthma') {
+                      btnColor = 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
+                      activeBtnColor = 'border-cyan-500 bg-cyan-500/20 text-cyan-300 font-semibold shadow-[0_0_8px_rgba(6,182,212,0.2)]'
+                    } else if (key === 'diabetes') {
+                      btnColor = 'border-amber-500/30 text-amber-500 hover:bg-amber-500/10'
+                      activeBtnColor = 'border-amber-500 bg-amber-500/20 text-amber-400 font-semibold shadow-[0_0_8px_rgba(245,158,11,0.2)]'
+                    } else if (key === 'epilepsy') {
+                      btnColor = 'border-fuchsia-500/30 text-fuchsia-500 hover:bg-fuchsia-500/10'
+                      activeBtnColor = 'border-fuchsia-500 bg-fuchsia-500/20 text-fuchsia-400 font-semibold shadow-[0_0_8px_rgba(217,70,239,0.2)]'
+                    }
+
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => {
+                          setActiveCondition(key)
+                          useTelemetryStore.getState().setCurrentCondition(key)
+                        }}
+                        className={`w-full py-1.5 px-2.5 text-[9px] text-left border rounded transition-all duration-150 cursor-pointer flex items-center justify-between uppercase tracking-wider ${
+                          isActive ? activeBtnColor : btnColor
+                        }`}
+                      >
+                        <span>{key === 'arrhythmia' ? 'Arrhythmia' : key === 'asthma' ? 'Asthma' : key === 'diabetes' ? 'Diabetes' : 'Epilepsy'}</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
 
             {/* Viewport Info Overlay (Bottom Left) */}
@@ -1262,7 +1313,8 @@ export default function DigitalTwin() {
 
             <button
               onClick={() => {
-                setActiveCondition('general')
+                setActiveCondition('diabetes')
+                useTelemetryStore.getState().setCurrentCondition('diabetes')
                 if (audioEnabled) {
                   playPulseSound(440, 0.4, 0.08)
                 }
