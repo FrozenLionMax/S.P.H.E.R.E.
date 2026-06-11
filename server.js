@@ -53,6 +53,31 @@ let state = {
   alertness: 96.0
 };
 
+// Helper: Calculate ECG wave amplitude based on normalized phase
+function getECGValue(p) {
+  if (p < 0.08) {
+    // P Wave
+    return Math.sin((p / 0.08) * Math.PI) * 0.12;
+  } else if (p >= 0.10 && p < 0.13) {
+    // Q Wave
+    const t = (p - 0.10) / 0.03;
+    return -t * 0.18;
+  } else if (p >= 0.13 && p < 0.18) {
+    // R Spike
+    const t = (p - 0.13) / 0.05;
+    return t < 0.4 ? -0.18 + (t / 0.4) * 1.68 : 1.5 - ((t - 0.4) / 0.6) * 1.85;
+  } else if (p >= 0.18 && p < 0.22) {
+    // S Dip
+    const t = (p - 0.18) / 0.04;
+    return -0.35 + (t * 0.35);
+  } else if (p >= 0.28 && p < 0.42) {
+    // T Wave
+    const t = (p - 0.28) / 0.14;
+    return Math.sin(t * Math.PI) * 0.28;
+  }
+  return 0;
+}
+
 // Helper: Introduce biological noise
 function applyJitter(val, min, max, maxDelta) {
   const delta = (Math.random() * maxDelta * 2) - maxDelta;
@@ -237,45 +262,147 @@ setInterval(() => {
 
   const payloadStr = JSON.stringify(payload);
 
-  // Broadcast to all clients
+  // Broadcast to all dashboard clients
   wss.clients.forEach((client) => {
-    if (client.readyState === 1) { // WebSocket.OPEN
+    if (client.readyState === 1 && client.isDashboard) { // WebSocket.OPEN and is dashboard
       client.send(payloadStr);
     }
   });
 }, 1000);
 
-wss.on('connection', (ws) => {
-  console.log('[WS] Client connected');
+wss.on('connection', (ws, req) => {
+  const reqUrl = req.url || '/';
+  const urlObj = new URL(reqUrl, 'http://localhost');
+  const pathname = urlObj.pathname.replace(/\/$/, '').toLowerCase();
+  const queryMode = urlObj.searchParams.get('mode') || urlObj.searchParams.get('simulation');
+  
+  // Detect simulation mode (cardiac, respiratory, or neurological) from route token or query param
+  const simulationMode = (pathname === '/cardiac' || pathname === '/respiratory' || pathname === '/neurological') 
+    ? pathname.slice(1) 
+    : (['cardiac', 'respiratory', 'neurological'].includes(queryMode) ? queryMode : null);
 
-  ws.on('message', (message) => {
-    try {
-      const parsed = JSON.parse(message);
-      
-      if (parsed.type === 'INITIATE_CRISIS') {
-        console.log(`[WS] Crisis initiated for track: ${state.activeTrack}`);
-        state.isCrisisActive = true;
+  if (simulationMode) {
+    console.log(`[WS] Client connected for high-fidelity simulation: ${simulationMode}`);
+    ws.isDashboard = false;
+    ws.simulationMode = simulationMode;
+
+    let phase = 0;
+    let lastTime = Date.now();
+
+    // High-fidelity simulation loop at 16ms (~60 updates/sec)
+    const timer = setInterval(() => {
+      if (ws.readyState !== 1) { // WebSocket.OPEN
+        clearInterval(timer);
+        return;
       }
-      
-      if (parsed.type === 'SET_TRACK') {
-        console.log(`[WS] Track changed to: ${parsed.track}`);
-        if (TRACKS[parsed.track]) {
-          resetStateToTrack(parsed.track);
+
+      const now = Date.now();
+      const dt = now - lastTime;
+      lastTime = now;
+
+      let payload = null;
+
+      if (simulationMode === 'cardiac') {
+        // Average 75 BPM with organic heart-rate fluctuations
+        const bpm = 75 + Math.sin(now / 5000) * 2 + (Math.random() - 0.5) * 1.2;
+        const beatInterval = 60000 / bpm;
+        phase = (phase + dt / beatInterval) % 1.0;
+
+        const amplitude = getECGValue(phase) + (Math.random() - 0.5) * 0.03;
+        // Check if current phase is within the R-peak spike window
+        const rPeakDetected = phase >= 0.145 && phase < 0.165;
+
+        payload = {
+          type: 'cardiac',
+          timestamp: now,
+          bpm: parseFloat(bpm.toFixed(1)),
+          amplitude: parseFloat(amplitude.toFixed(4)),
+          rPeakDetected
+        };
+      } else if (simulationMode === 'respiratory') {
+        // Respiratory rate fluctuating around 14
+        const respRate = 14 + Math.sin(now / 8000) * 0.8;
+        const period = 60000 / respRate;
+        phase = (phase + dt / period) % 1.0;
+
+        // Oscillating lung capacity (sinusoidal)
+        const lungCapacity = 2.5 + Math.sin(phase * Math.PI * 2) * 1.2 + (Math.random() - 0.5) * 0.04;
+        const oxygenSaturation = 98.2 + Math.sin(now / 12000) * 0.6 + (Math.random() - 0.5) * 0.1;
+
+        payload = {
+          type: 'respiratory',
+          timestamp: now,
+          respiratoryRate: parseFloat(respRate.toFixed(1)),
+          lungCapacity: parseFloat(lungCapacity.toFixed(4)),
+          oxygenSaturation: parseFloat(oxygenSaturation.toFixed(2))
+        };
+      } else if (simulationMode === 'neurological') {
+        const seizureActive = true;
+        // Fast alpha/beta variations or seizure frequency (58Hz+)
+        const brainwaveFrequency = seizureActive 
+          ? 58 + Math.sin(now / 3000) * 10 + (Math.random() - 0.5) * 6
+          : 12 + Math.sin(now / 4000) * 2 + (Math.random() - 0.5) * 1.5;
+
+        // Array of high-frequency brain noise samples
+        const eegArray = Array.from({ length: 8 }, () => {
+          const base = Math.sin(now * 0.08) * 0.4 + Math.cos(now * 0.22) * 0.3;
+          const noise = (Math.random() - 0.5) * (seizureActive ? 1.5 : 0.2);
+          return parseFloat((base + noise).toFixed(4));
+        });
+
+        payload = {
+          type: 'neurological',
+          timestamp: now,
+          brainwaveFrequency: parseFloat(brainwaveFrequency.toFixed(1)),
+          eegArray,
+          seizureActive
+        };
+      }
+
+      if (payload) {
+        ws.send(JSON.stringify(payload));
+      }
+    }, 16);
+
+    ws.on('close', () => {
+      console.log(`[WS] Client disconnected from high-fidelity simulation: ${simulationMode}`);
+      clearInterval(timer);
+    });
+
+  } else {
+    // Default dashboard client
+    console.log('[WS] Client connected (Dashboard Mode)');
+    ws.isDashboard = true;
+
+    ws.on('message', (message) => {
+      try {
+        const parsed = JSON.parse(message);
+        
+        if (parsed.type === 'INITIATE_CRISIS') {
+          console.log(`[WS] Crisis initiated for track: ${state.activeTrack}`);
+          state.isCrisisActive = true;
         }
-      }
+        
+        if (parsed.type === 'SET_TRACK') {
+          console.log(`[WS] Track changed to: ${parsed.track}`);
+          if (TRACKS[parsed.track]) {
+            resetStateToTrack(parsed.track);
+          }
+        }
 
-      if (parsed.type === 'RESOLVE_CRISIS') {
-        console.log(`[WS] Crisis resolved for track: ${state.activeTrack}`);
-        resetStateToTrack(state.activeTrack);
+        if (parsed.type === 'RESOLVE_CRISIS') {
+          console.log(`[WS] Crisis resolved for track: ${state.activeTrack}`);
+          resetStateToTrack(state.activeTrack);
+        }
+      } catch (err) {
+        console.error('[WS] Error parsing message:', err);
       }
-    } catch (err) {
-      console.error('[WS] Error parsing message:', err);
-    }
-  });
+    });
 
-  ws.on('close', () => {
-    console.log('[WS] Client disconnected');
-  });
+    ws.on('close', () => {
+      console.log('[WS] Client disconnected (Dashboard Mode)');
+    });
+  }
 });
 
 app.get('/health', (req, res) => {
