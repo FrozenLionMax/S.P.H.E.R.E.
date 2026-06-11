@@ -155,7 +155,7 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
       }
 
       ws.onerror = (error) => {
-        console.error('[TelemetryStore] WebSocket encountered network layer error:', error)
+        console.warn('[TelemetryStore] WebSocket connection handshake or network layer event:', error)
       }
 
     } catch (err) {

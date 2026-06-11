@@ -333,8 +333,12 @@ function HologramScene() {
 
 export default function DigitalTwinScene({ currentCondition }: DigitalTwinSceneProps) {
   useEffect(() => {
+    // Dynamic host resolution to support local network access
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+    const wsUrl = `ws://${host}:8080`
+
     // Connect to the WebSocket telemetry server on mount
-    useTelemetryStore.getState().connectToTelemetry('ws://localhost:8080')
+    useTelemetryStore.getState().connectToTelemetry(wsUrl)
     return () => {
       // Clean up connection on unmount
       useTelemetryStore.getState().disconnectFromTelemetry()
