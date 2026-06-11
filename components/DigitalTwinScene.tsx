@@ -87,104 +87,174 @@ function HudPointerLine({ start, mid, end, color, active }: { start: [number, nu
       color={color}
       lineWidth={1.0}
       transparent
-      opacity={active ? 0.7 : 0.12}
+      opacity={active ? 0.75 : 0.12}
       blending={THREE.AdditiveBlending}
     />
   )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Holographic Human Skeleton and Body Structure
+// Hyperrealistic Mannequin Physical Glass Skin Contours
 // ─────────────────────────────────────────────────────────────────────────────
-function HolographicHumanBody() {
-  const bodyColor = '#00a3ff'
-  const skeletonColor = '#00f6ff'
+function HumanGlassSkin() {
+  const glassColor = '#00a3ff'
 
   return (
     <group>
-      {/* Head Capsule boundary outline */}
-      <mesh position={[0, 1.4, 0]}>
-        <sphereGeometry args={[0.34, 16, 16]} />
-        <meshBasicMaterial color={bodyColor} wireframe transparent opacity={0.05} blending={THREE.AdditiveBlending} />
+      {/* Outer Skin Head Hull */}
+      <mesh position={[0, 1.4, 0]} scale={[1.02, 1.14, 1.02]}>
+        <sphereGeometry args={[0.33, 24, 24]} />
+        <meshPhysicalMaterial
+          color={glassColor}
+          transparent
+          opacity={0.16}
+          roughness={0.1}
+          metalness={0.05}
+          clearcoat={1.0}
+          clearcoatRoughness={0.05}
+          transmission={0.65}
+          thickness={0.6}
+          ior={1.42}
+          side={THREE.DoubleSide}
+        />
       </mesh>
 
-      {/* Spine (Central Nervous Column) */}
-      <mesh position={[0, 0.45, 0]}>
-        <cylinderGeometry args={[0.018, 0.018, 1.4, 8]} />
-        <meshBasicMaterial color={skeletonColor} wireframe transparent opacity={0.22} blending={THREE.AdditiveBlending} />
+      {/* Torso/Chest Hull */}
+      <mesh position={[0, 0.45, 0]} scale={[1.25, 1.05, 0.95]}>
+        <cylinderGeometry args={[0.26, 0.22, 1.0, 20, 4]} />
+        <meshPhysicalMaterial
+          color={glassColor}
+          transparent
+          opacity={0.18}
+          roughness={0.15}
+          metalness={0.08}
+          clearcoat={1.0}
+          clearcoatRoughness={0.1}
+          transmission={0.6}
+          thickness={0.8}
+          ior={1.45}
+          side={THREE.DoubleSide}
+        />
       </mesh>
 
-      {/* Shoulder Collarbone */}
-      <mesh position={[0, 1.05, 0]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.016, 0.016, 0.9, 8]} />
-        <meshBasicMaterial color={skeletonColor} wireframe transparent opacity={0.22} blending={THREE.AdditiveBlending} />
-      </mesh>
-
-      {/* Chest Ribs Ring outlines */}
-      <group position={[0, 0.65, 0]}>
-        {[0.15, 0, -0.15, -0.3].map((yOffset, idx) => (
-          <mesh key={idx} position={[0, yOffset, 0]} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.28 - idx * 0.02, 0.01, 8, 24]} />
-            <meshBasicMaterial color={bodyColor} transparent opacity={0.06} blending={THREE.AdditiveBlending} />
-          </mesh>
-        ))}
-      </group>
-
-      {/* Pelvis Ring Structure */}
-      <mesh position={[0, -0.25, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.25, 0.015, 8, 24]} />
-        <meshBasicMaterial color={skeletonColor} transparent opacity={0.15} blending={THREE.AdditiveBlending} />
-      </mesh>
-
-      {/* Left Upper Arm */}
+      {/* Left Upper Arm Skin */}
       <mesh position={[-0.55, 0.75, 0]} rotation={[0, 0, 0.25]}>
-        <cylinderGeometry args={[0.016, 0.015, 0.55, 6]} />
-        <meshBasicMaterial color={bodyColor} wireframe transparent opacity={0.08} blending={THREE.AdditiveBlending} />
+        <cylinderGeometry args={[0.045, 0.038, 0.55, 12]} />
+        <meshPhysicalMaterial
+          color={glassColor}
+          transparent
+          opacity={0.12}
+          roughness={0.15}
+          clearcoat={1.0}
+          transmission={0.7}
+          thickness={0.5}
+          side={THREE.DoubleSide}
+        />
       </mesh>
 
-      {/* Right Upper Arm */}
+      {/* Right Upper Arm Skin */}
       <mesh position={[0.55, 0.75, 0]} rotation={[0, 0, -0.25]}>
-        <cylinderGeometry args={[0.016, 0.015, 0.55, 6]} />
-        <meshBasicMaterial color={bodyColor} wireframe transparent opacity={0.08} blending={THREE.AdditiveBlending} />
+        <cylinderGeometry args={[0.045, 0.038, 0.55, 12]} />
+        <meshPhysicalMaterial
+          color={glassColor}
+          transparent
+          opacity={0.12}
+          roughness={0.15}
+          clearcoat={1.0}
+          transmission={0.7}
+          thickness={0.5}
+          side={THREE.DoubleSide}
+        />
       </mesh>
 
-      {/* Left Forearm */}
-      <mesh position={[-0.65, 0.35, 0]} rotation={[0, 0, 0.15]}>
-        <cylinderGeometry args={[0.014, 0.011, 0.48, 6]} />
-        <meshBasicMaterial color={bodyColor} wireframe transparent opacity={0.08} blending={THREE.AdditiveBlending} />
-      </mesh>
-
-      {/* Right Forearm */}
-      <mesh position={[0.65, 0.35, 0]} rotation={[0, 0, -0.15]}>
-        <cylinderGeometry args={[0.014, 0.011, 0.48, 6]} />
-        <meshBasicMaterial color={bodyColor} wireframe transparent opacity={0.08} blending={THREE.AdditiveBlending} />
-      </mesh>
-
-      {/* Left Thigh */}
+      {/* Left Thigh Skin */}
       <mesh position={[-0.22, -0.65, 0]} rotation={[0, 0, 0.05]}>
-        <cylinderGeometry args={[0.028, 0.022, 0.75, 6]} />
-        <meshBasicMaterial color={bodyColor} wireframe transparent opacity={0.08} blending={THREE.AdditiveBlending} />
+        <cylinderGeometry args={[0.07, 0.055, 0.75, 12]} />
+        <meshPhysicalMaterial
+          color={glassColor}
+          transparent
+          opacity={0.12}
+          roughness={0.15}
+          clearcoat={1.0}
+          transmission={0.7}
+          thickness={0.5}
+          side={THREE.DoubleSide}
+        />
       </mesh>
 
-      {/* Right Thigh */}
+      {/* Right Thigh Skin */}
       <mesh position={[0.22, -0.65, 0]} rotation={[0, 0, -0.05]}>
-        <cylinderGeometry args={[0.028, 0.022, 0.75, 6]} />
-        <meshBasicMaterial color={bodyColor} wireframe transparent opacity={0.08} blending={THREE.AdditiveBlending} />
+        <cylinderGeometry args={[0.07, 0.055, 0.75, 12]} />
+        <meshPhysicalMaterial
+          color={glassColor}
+          transparent
+          opacity={0.12}
+          roughness={0.15}
+          clearcoat={1.0}
+          transmission={0.7}
+          thickness={0.5}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hyperrealistic Mannequin Detailed Skeleton Structure
+// ─────────────────────────────────────────────────────────────────────────────
+function DetailedSkeleton() {
+  const boneColor = '#e3e4e6'
+  const jointColor = '#a8b0c0'
+
+  return (
+    <group>
+      {/* 1. Spine vertebrae column: 12 segmented bones */}
+      {Array.from({ length: 12 }, (_, i) => {
+        const y = -0.2 + i * 0.1
+        return (
+          <group key={i} position={[0, y, -0.06]}>
+            {/* Vertebra body */}
+            <mesh>
+              <boxGeometry args={[0.07, 0.035, 0.055]} />
+              <meshStandardMaterial color={boneColor} roughness={0.7} metalness={0.1} />
+            </mesh>
+            {/* Transverse spine processes */}
+            <mesh position={[0, 0, -0.03]} rotation={[0, 0, Math.PI / 4]}>
+              <boxGeometry args={[0.11, 0.015, 0.015]} />
+              <meshStandardMaterial color={jointColor} roughness={0.65} />
+            </mesh>
+          </group>
+        )
+      })}
+
+      {/* 2. Ribcage structure: 6 wrapping ribs */}
+      {Array.from({ length: 6 }, (_, i) => {
+        const y = 0.35 + i * 0.1
+        const scale = 0.26 - i * 0.015
+        return (
+          <group key={i} position={[0, y, 0]}>
+            {/* Left Rib Curve */}
+            <mesh position={[-0.13, 0, 0]} rotation={[0, 0, -0.25]}>
+              <torusGeometry args={[scale, 0.009, 8, 16, Math.PI]} />
+              <meshStandardMaterial color={boneColor} roughness={0.8} />
+            </mesh>
+            {/* Right Rib Curve */}
+            <mesh position={[0.13, 0, 0]} rotation={[0, Math.PI, 0.25]}>
+              <torusGeometry args={[scale, 0.009, 8, 16, Math.PI]} />
+              <meshStandardMaterial color={boneColor} roughness={0.8} />
+            </mesh>
+          </group>
+        )
+      })}
+
+      {/* 3. Collarbone and shoulders */}
+      <mesh position={[0, 1.05, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <cylinderGeometry args={[0.014, 0.014, 0.9, 8]} />
+        <meshStandardMaterial color={boneColor} roughness={0.8} />
       </mesh>
 
-      {/* Left Shin */}
-      <mesh position={[-0.25, -1.35, 0]} rotation={[0, 0, 0.02]}>
-        <cylinderGeometry args={[0.02, 0.015, 0.7, 6]} />
-        <meshBasicMaterial color={bodyColor} wireframe transparent opacity={0.08} blending={THREE.AdditiveBlending} />
-      </mesh>
-
-      {/* Right Shin */}
-      <mesh position={[0.25, -1.35, 0]} rotation={[0, 0, -0.02]}>
-        <cylinderGeometry args={[0.02, 0.015, 0.7, 6]} />
-        <meshBasicMaterial color={bodyColor} wireframe transparent opacity={0.08} blending={THREE.AdditiveBlending} />
-      </mesh>
-
-      {/* Joint Nodes (Shoulders, Hips, Knees, Elbows) */}
+      {/* 4. Joint Spheres */}
       {[
         [-0.45, 1.05, 0], [0.45, 1.05, 0],  // Shoulders
         [-0.62, 0.55, 0], [0.62, 0.55, 0],  // Elbows
@@ -192,8 +262,8 @@ function HolographicHumanBody() {
         [-0.24, -1.0, 0], [0.24, -1.0, 0]   // Knees
       ].map((pos, idx) => (
         <mesh key={idx} position={pos as [number, number, number]}>
-          <sphereGeometry args={[0.035, 6, 6]} />
-          <meshBasicMaterial color={skeletonColor} transparent opacity={0.25} blending={THREE.AdditiveBlending} />
+          <sphereGeometry args={[0.038, 8, 8]} />
+          <meshStandardMaterial color={jointColor} metalness={0.3} roughness={0.4} />
         </mesh>
       ))}
     </group>
@@ -407,10 +477,39 @@ function HologramScene() {
 
   return (
     <group position={[0, -0.1, 0]}>
-      {/* 1. Holographic Skeletal Avatar Mannequin */}
-      <HolographicHumanBody />
+      {/* 1. Human Physical Glass Skin Contours (Refractive clearcoat shell) */}
+      <HumanGlassSkin />
 
-      {/* 2. BRAIN Mesh - Interactive */}
+      {/* 2. Detailed Skeletal Bones Column & Ribcage */}
+      <DetailedSkeleton />
+
+      {/* 3. Cardiovascular Vascular System (Arteries & Veins) */}
+      {/* Left Arm Vascular Feed */}
+      <Line points={[[-0.08, 0.46, 0.09], [-0.43, 1.03, 0.02], [-0.62, 0.55, 0.01], [-0.78, 0.04, 0.0]]} color="#ff1133" lineWidth={0.8} transparent opacity={0.6} />
+      <Line points={[[-0.08, 0.44, 0.07], [-0.47, 1.07, -0.02], [-0.65, 0.57, -0.01], [-0.82, 0.06, 0.0]]} color="#0055ff" lineWidth={0.8} transparent opacity={0.6} />
+      
+      {/* Right Arm Vascular Feed */}
+      <Line points={[[-0.08, 0.46, 0.09], [0.43, 1.03, 0.02], [0.62, 0.55, 0.01], [0.78, 0.04, 0.0]]} color="#ff1133" lineWidth={0.8} transparent opacity={0.6} />
+      <Line points={[[-0.08, 0.44, 0.07], [0.47, 1.07, -0.02], [0.65, 0.57, -0.01], [0.82, 0.06, 0.0]]} color="#0055ff" lineWidth={0.8} transparent opacity={0.6} />
+
+      {/* Lower Body/Legs Vascular Feed */}
+      <Line points={[[-0.08, 0.46, 0.09], [-0.1, -0.23, 0.0], [-0.22, -0.98, 0.0], [-0.24, -1.68, 0.0]]} color="#ff1133" lineWidth={0.8} transparent opacity={0.6} />
+      <Line points={[[-0.08, 0.44, 0.07], [-0.14, -0.27, -0.02], [-0.26, -1.02, -0.02], [-0.28, -1.72, 0.0]]} color="#0055ff" lineWidth={0.8} transparent opacity={0.6} />
+
+      <Line points={[[-0.08, 0.46, 0.09], [0.1, -0.23, 0.0], [0.22, -0.98, 0.0], [0.24, -1.68, 0.0]]} color="#ff1133" lineWidth={0.8} transparent opacity={0.6} />
+      <Line points={[[-0.08, 0.44, 0.07], [0.14, -0.27, -0.02], [0.26, -1.02, -0.02], [0.28, -1.72, 0.0]]} color="#0055ff" lineWidth={0.8} transparent opacity={0.6} />
+
+      {/* Carotid Vascular Feed (Neck to Brain) */}
+      <Line points={[[-0.08, 0.46, 0.09], [-0.05, 1.0, 0.02], [0.0, 1.35, 0.05]]} color="#ff1133" lineWidth={1.0} transparent opacity={0.6} />
+      <Line points={[[-0.08, 0.44, 0.07], [-0.09, 1.0, -0.02], [-0.04, 1.35, -0.01]]} color="#0055ff" lineWidth={1.0} transparent opacity={0.6} />
+
+      {/* 4. Nervous System Branches (Purple) */}
+      <Line points={[[0, 0.95, -0.05], [-0.45, 1.05, 0], [-0.62, 0.55, 0], [-0.8, 0.05, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
+      <Line points={[[0, 0.95, -0.05], [0.45, 1.05, 0], [0.62, 0.55, 0], [0.8, 0.05, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
+      <Line points={[[0, -0.1, -0.05], [-0.2, -0.25, 0], [-0.24, -1.0, 0], [-0.25, -1.7, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
+      <Line points={[[0, -0.1, -0.05], [0.2, -0.25, 0], [0.24, -1.0, 0], [0.25, -1.7, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
+
+      {/* 5. BRAIN Mesh - Interactive */}
       <group
         position={[0, 1.4, 0]}
         onPointerOver={() => setCursor('pointer')}
@@ -443,12 +542,13 @@ function HologramScene() {
         </mesh>
       </group>
 
-      {/* 3. LUNGS Meshes (Symmetrical Left & Right Lobes) - Interactive */}
+      {/* 6. LUNGS Meshes & Inner Branching Bronchial Airway Trees - Interactive */}
       <group
         onPointerOver={() => setCursor('pointer')}
         onPointerOut={() => setCursor('auto')}
         onClick={() => handleSelectCondition('asthma')}
       >
+        {/* Left Lung Lobe */}
         <mesh ref={leftLungMeshRef} position={[-0.24, 0.5, 0.02]}>
           <cylinderGeometry args={[0.12, 0.08, 0.5, 12, 4]} />
           <meshStandardMaterial
@@ -464,6 +564,7 @@ function HologramScene() {
             metalness={0.1}
           />
         </mesh>
+        {/* Right Lung Lobe */}
         <mesh ref={rightLungMeshRef} position={[0.24, 0.5, 0.02]}>
           <cylinderGeometry args={[0.12, 0.08, 0.5, 12, 4]} />
           <meshStandardMaterial
@@ -479,33 +580,69 @@ function HologramScene() {
             metalness={0.1}
           />
         </mesh>
+
+        {/* Bronchial Airways Lobe Left */}
+        <group position={[-0.24, 0.5, 0.02]} scale={[0.85, 0.85, 0.85]}>
+          <mesh position={[0, 0.1, 0]} rotation={[0, 0, 0.4]}>
+            <cylinderGeometry args={[0.015, 0.01, 0.15, 6]} />
+            <meshBasicMaterial color="#00ffff" transparent opacity={0.4} />
+          </mesh>
+          <mesh position={[-0.04, -0.05, 0.03]} rotation={[0.2, 0, 0.8]}>
+            <cylinderGeometry args={[0.01, 0.006, 0.12, 6]} />
+            <meshBasicMaterial color="#00ffff" transparent opacity={0.4} />
+          </mesh>
+          <mesh position={[0.04, -0.08, -0.02]} rotation={[-0.2, 0, 0.2]}>
+            <cylinderGeometry args={[0.01, 0.006, 0.12, 6]} />
+            <meshBasicMaterial color="#00ffff" transparent opacity={0.4} />
+          </mesh>
+        </group>
+        {/* Bronchial Airways Lobe Right */}
+        <group position={[0.24, 0.5, 0.02]} scale={[0.85, 0.85, 0.85]}>
+          <mesh position={[0, 0.1, 0]} rotation={[0, 0, -0.4]}>
+            <cylinderGeometry args={[0.015, 0.01, 0.15, 6]} />
+            <meshBasicMaterial color="#00ffff" transparent opacity={0.4} />
+          </mesh>
+          <mesh position={[0.04, -0.05, 0.03]} rotation={[0.2, 0, -0.8]}>
+            <cylinderGeometry args={[0.01, 0.006, 0.12, 6]} />
+            <meshBasicMaterial color="#00ffff" transparent opacity={0.4} />
+          </mesh>
+          <mesh position={[-0.04, -0.08, -0.02]} rotation={[-0.2, 0, -0.2]}>
+            <cylinderGeometry args={[0.01, 0.006, 0.12, 6]} />
+            <meshBasicMaterial color="#00ffff" transparent opacity={0.4} />
+          </mesh>
+        </group>
       </group>
 
-      {/* 4. HEART Mesh (Left-center with slight chest protrusion) - Interactive */}
-      <mesh
-        ref={heartMeshRef}
+      {/* 7. HEART Mesh with pulsing Aorta pipe - Interactive */}
+      <group
         position={[-0.08, 0.46, 0.09]}
-        rotation={[0.15, 0, 0.2]}
         onPointerOver={() => setCursor('pointer')}
         onPointerOut={() => setCursor('auto')}
         onClick={() => handleSelectCondition('arrhythmia')}
       >
-        <octahedronGeometry args={[0.14, 2]} />
-        <meshStandardMaterial
-          ref={heartMatRef}
-          wireframe
-          transparent
-          opacity={0.7}
-          color="#ff2b56"
-          emissive="#ff2b56"
-          emissiveIntensity={1.0}
-          blending={THREE.AdditiveBlending}
-          roughness={0.8}
-          metalness={0.1}
-        />
-      </mesh>
+        <mesh ref={heartMeshRef} rotation={[0.15, 0, 0.2]}>
+          <octahedronGeometry args={[0.13, 2]} />
+          <meshStandardMaterial
+            ref={heartMatRef}
+            wireframe
+            transparent
+            opacity={0.7}
+            color="#ff2b56"
+            emissive="#ff2b56"
+            emissiveIntensity={1.0}
+            blending={THREE.AdditiveBlending}
+            roughness={0.8}
+            metalness={0.1}
+          />
+        </mesh>
+        {/* Pulsing Aorta Arc tube */}
+        <mesh position={[0, 0.09, 0.01]} rotation={[0, 0, -Math.PI / 4]}>
+          <torusGeometry args={[0.045, 0.015, 8, 16, Math.PI]} />
+          <meshStandardMaterial color="#ff2b56" roughness={0.5} />
+        </mesh>
+      </group>
 
-      {/* 5. LIVER Mesh (Abdomen Right Lobe) - Interactive */}
+      {/* 8. LIVER Mesh (Abdomen Right Lobe) - Interactive */}
       <mesh
         ref={liverMeshRef}
         position={[0.13, 0.12, 0.07]}
@@ -529,7 +666,7 @@ function HologramScene() {
         />
       </mesh>
 
-      {/* 6. Glowing Bent 3D HUD Pointers / Leader Lines */}
+      {/* 9. Glowing Bent 3D HUD Pointers / Leader Lines */}
       {/* Brain Pointer */}
       <HudPointerLine start={[0, 1.4, 0]} mid={[1.3, 1.4, 0]} end={[1.7, 1.4, 0]} color="#c040ff" active={currentCondition === 'epilepsy'} />
       {/* Lungs Pointer */}
@@ -539,7 +676,7 @@ function HologramScene() {
       {/* Liver Pointer */}
       <HudPointerLine start={[0.13, 0.12, 0.07]} mid={[1.3, -0.4, 0]} end={[1.7, -0.4, 0]} color="#ff9900" active={currentCondition === 'diabetes'} />
 
-      {/* 7. Floating Holographic HUD HTML Cards in 3D Space */}
+      {/* 10. Floating Holographic HUD HTML Cards in 3D Space */}
 
       {/* A. NEUROLOGICAL DISTURBANCE (Brain - Top Right) */}
       <Html position={[1.7, 1.4, 0]} center distanceFactor={4.8} style={{ pointerEvents: 'none' }}>
@@ -695,11 +832,12 @@ export default function DigitalTwinScene({ currentCondition }: DigitalTwinSceneP
         gl={{ antialias: true, alpha: true }}
         style={{ background: 'transparent' }}
       >
-        <ambientLight intensity={0.4} />
+        <ambientLight intensity={0.2} />
         
-        {/* Soft, low-intensity spot-lights to avoid wireframe color blowout/overexposure */}
-        <pointLight position={[2, 3, 4]} intensity={0.3} color="#00ffaa" />
-        <pointLight position={[-3, -2, -3]} intensity={0.2} color="#00ccff" />
+        {/* Focused spot lighting to project highlights on transmission clearcoat glass material */}
+        <spotLight position={[5, 5, 5]} angle={0.4} penumbra={1} intensity={6.0} color="#00f6ff" />
+        <spotLight position={[-5, 5, 5]} angle={0.4} penumbra={1} intensity={3.5} color="#c040ff" />
+        <pointLight position={[0, -2, 3]} intensity={1.5} color="#00ffaa" />
         
         <HologramScene />
         
