@@ -14,7 +14,7 @@ interface DigitalTwinSceneProps {
 // ─────────────────────────────────────────────────────────────────────────────
 // 60FPS Dynamic SVG Biological Waveform Component
 // ─────────────────────────────────────────────────────────────────────────────
-function MiniSvgWave({ color, speed = 1.0, amplitude = 8, type = 'sine' }: { color: string; speed?: number; amplitude?: number; type: 'sine' | 'ecg' | 'noise' | 'flat' }) {
+function MiniSvgWave({ color, speed = 1.0, amplitude = 8, type = 'sine', className = "w-28 h-6" }: { color: string; speed?: number; amplitude?: number; type: 'sine' | 'ecg' | 'noise' | 'flat'; className?: string }) {
   const [phase, setPhase] = useState(0)
 
   useEffect(() => {
@@ -72,7 +72,7 @@ function MiniSvgWave({ color, speed = 1.0, amplitude = 8, type = 'sine' }: { col
   }, [phase, type, amplitude])
 
   return (
-    <svg className="w-28 h-6 opacity-90 border-b border-white/[0.03] pb-0.5" viewBox="0 0 140 24">
+    <svg className={`${className} opacity-90 border-b border-white/[0.03] pb-0.5`} viewBox="0 0 140 24">
       <path d={pathData} fill="none" stroke={color} strokeWidth="1.2" />
     </svg>
   )
@@ -97,13 +97,14 @@ function HudPointerLine({ start, mid, end, color, active }: { start: [number, nu
 // ─────────────────────────────────────────────────────────────────────────────
 // Hyperrealistic Mannequin Physical Glass Skin Contours
 // ─────────────────────────────────────────────────────────────────────────────
-function HumanGlassSkin() {
+function HumanGlassSkin({ isDashboard = false }: { isDashboard?: boolean }) {
   const glassColor = '#ffffff'
   const { camera } = useThree()
 
   return (
     <group 
       onClick={(e) => { 
+        if (isDashboard) return // Disable custom skin zoom on dashboard to keep view clean and 2D
         e.stopPropagation()
         
         // Don't override if an organ was clicked (organ clicks are handled in their own groups)
@@ -672,7 +673,7 @@ function CameraController({ controlsRef }: { controlsRef: any }) {
   return null
 }
 
-function HologramScene() {
+function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
   // Mesh References
   const brainMeshRef = useRef<THREE.Mesh>(null)
   const leftLungMeshRef = useRef<THREE.Mesh>(null)
@@ -720,6 +721,9 @@ function HologramScene() {
 
   const targetLungOpacity = selectedOrgan === 'none' || selectedOrgan === 'lungs' ? activeOpacity : inactiveOpacity
   const targetHeartOpacity = selectedOrgan === 'none' || selectedOrgan === 'heart' ? activeOpacity : inactiveOpacity
+
+  const sideOffset = isDashboard ? 0.85 : 1.7
+  const midXOffset = isDashboard ? 0.25 : 0.35
 
   // Cursor pointer handler
   const setCursor = (type: string) => {
@@ -967,7 +971,7 @@ function HologramScene() {
   return (
     <group position={[0, -0.1, 0]}>
       {/* 1. Human Physical Glass Skin Contours (Refractive clearcoat shell) */}
-      <HumanGlassSkin />
+      <HumanGlassSkin isDashboard={isDashboard} />
 
       {/* 2. Detailed Skeletal Bones Column & Ribcage */}
       <DetailedSkeleton />
@@ -1159,135 +1163,151 @@ function HologramScene() {
 
       {/* 9. Glowing Bent 3D HUD Pointers / Leader Lines */}
       {/* Brain Pointer */}
-      <HudPointerLine start={[0, 1.4, 0]} mid={[1.3, 1.4, 0]} end={[1.7, 1.4, 0]} color="#c040ff" active={true} />
+      <HudPointerLine start={[0, 1.4, 0]} mid={[sideOffset - midXOffset, 1.4, 0]} end={[sideOffset, 1.4, 0]} color="#c040ff" active={true} />
       {/* Lungs Pointer */}
-      <HudPointerLine start={[0.24, 0.5, 0.02]} mid={[1.3, 0.5, 0]} end={[1.7, 0.5, 0]} color="#00ccff" active={true} />
+      <HudPointerLine start={[0.24, 0.5, 0.02]} mid={[sideOffset - midXOffset, 0.5, 0]} end={[sideOffset, 0.5, 0]} color="#00ccff" active={true} />
       {/* Heart Pointer */}
-      <HudPointerLine start={[-0.08, 0.46, 0.09]} mid={[-1.3, 0.46, 0]} end={[-1.7, 0.46, 0]} color="#ff2b56" active={true} />
+      <HudPointerLine start={[-0.08, 0.46, 0.09]} mid={[-sideOffset + midXOffset, 0.46, 0]} end={[-sideOffset, 0.46, 0]} color="#ff2b56" active={true} />
       {/* Liver Pointer */}
-      <HudPointerLine start={[0.13, 0.12, 0.07]} mid={[1.3, -0.4, 0]} end={[1.7, -0.4, 0]} color="#ff9900" active={true} />
+      <HudPointerLine start={[0.13, 0.12, 0.07]} mid={[sideOffset - midXOffset, -0.4, 0]} end={[sideOffset, -0.4, 0]} color="#ff9900" active={true} />
 
       {/* 10. Floating Holographic HUD HTML Cards in 3D Space */}
 
       {/* A. NEURAL STRESS RESPONSE (Brain - Top Right) */}
-      <Html position={[1.7, 1.4, 0]} center distanceFactor={4.8} style={{ pointerEvents: 'none' }}>
+      <Html position={[sideOffset, 1.4, 0]} center distanceFactor={isDashboard ? 3.2 : 4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          className="p-3 rounded border font-mono select-none pointer-events-auto cursor-default w-52 flex flex-col gap-1.5 bg-[#080d0a]/92 border-[#c040ff] text-slate-100 shadow-[0_0_15px_rgba(192,64,255,0.25)] opacity-100"
+          className={`font-mono select-none pointer-events-auto cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
+            isDashboard 
+              ? 'p-1.5 rounded-xs w-[128px] gap-0.5 border-[#c040ff]/60 shadow-[0_0_8px_rgba(192,64,255,0.18)]' 
+              : 'p-3 rounded w-52 gap-1.5 border-[#c040ff] shadow-[0_0_15px_rgba(192,64,255,0.25)] opacity-100'
+          }`}
         >
-          <div className="flex items-center justify-between text-[7px] border-b border-white/5 pb-1">
+          <div className={`flex items-center justify-between border-b border-white/5 ${isDashboard ? 'text-[5.5px] pb-0.5' : 'text-[7px] pb-1'}`}>
             <span className="font-semibold text-[#c040ff] tracking-widest flex items-center gap-1">
-              <Brain className="w-2.5 h-2.5" />
-              NEURAL STRESS RESPONSE
+              <Brain className={isDashboard ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
+              NEURAL STRESS
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-[#c040ff] animate-pulse"></span>
+            <span className={`w-1.5 h-1.5 rounded-full bg-[#c040ff] animate-pulse`}></span>
           </div>
-          <div className="flex flex-col gap-0.5 text-[8px] text-slate-400">
+          <div className={`flex flex-col gap-0.5 text-slate-400 ${isDashboard ? 'text-[6px] leading-tight' : 'text-[8px]'}`}>
             <div className="flex justify-between">
               <span>PATHOLOGY:</span>
-              <span className="font-bold text-slate-200">CEREBRAL METABOLIC LOAD</span>
+              <span className="font-bold text-slate-200">METABOLIC LOAD</span>
             </div>
             <div className="flex justify-between">
               <span>METRIC (EEG):</span>
               <span className="font-bold text-[#c040ff]">{brainwaveFreq.toFixed(1)} Hz</span>
             </div>
           </div>
-          <MiniSvgWave color="#c040ff" speed={1.5} amplitude={8} type="noise" />
-          <div className="text-[7px] font-bold text-[#c040ff] animate-pulse tracking-wide uppercase mt-0.5 flex items-center gap-1">
-            <AlertTriangle className="w-2 h-2" />
-            STATUS: ELEVATED CEREBRAL IRRITABILITY
+          <MiniSvgWave color="#c040ff" speed={1.5} amplitude={8} type="noise" className={isDashboard ? 'w-24 h-3.5' : 'w-28 h-6'} />
+          <div className={`font-bold text-[#c040ff] animate-pulse tracking-wide uppercase flex items-center gap-1 ${isDashboard ? 'text-[5.5px] mt-0.5' : 'text-[7px] mt-0.5'}`}>
+            <AlertTriangle className={isDashboard ? 'w-1.5 h-1.5' : 'w-2 h-2'} />
+            STATUS: ELEVATED
           </div>
         </div>
       </Html>
 
       {/* B. PULMONARY COMPENSATION (Lungs - Center Right) */}
-      <Html position={[1.7, 0.5, 0]} center distanceFactor={4.8} style={{ pointerEvents: 'none' }}>
+      <Html position={[sideOffset, 0.5, 0]} center distanceFactor={isDashboard ? 3.2 : 4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          className="p-3 rounded border font-mono select-none pointer-events-auto cursor-default w-52 flex flex-col gap-1.5 bg-[#080d0a]/92 border-[#00ccff] text-slate-100 shadow-[0_0_15px_rgba(0,204,255,0.25)] opacity-100"
+          className={`font-mono select-none pointer-events-auto cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
+            isDashboard 
+              ? 'p-1.5 rounded-xs w-[128px] gap-0.5 border-[#00ccff]/60 shadow-[0_0_8px_rgba(0,204,255,0.18)]' 
+              : 'p-3 rounded w-52 gap-1.5 border-[#00ccff] shadow-[0_0_15px_rgba(0,204,255,0.25)] opacity-100'
+          }`}
         >
-          <div className="flex items-center justify-between text-[7px] border-b border-white/5 pb-1">
+          <div className={`flex items-center justify-between border-b border-white/5 ${isDashboard ? 'text-[5.5px] pb-0.5' : 'text-[7px] pb-1'}`}>
             <span className="font-semibold text-[#00ccff] tracking-widest flex items-center gap-1">
-              <Activity className="w-2.5 h-2.5" />
-              PULMONARY COMPENSATION
+              <Activity className={isDashboard ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
+              PULMONARY COMP.
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-[#00ccff] animate-pulse"></span>
+            <span className={`w-1.5 h-1.5 rounded-full bg-[#00ccff] animate-pulse`}></span>
           </div>
-          <div className="flex flex-col gap-0.5 text-[8px] text-slate-400">
+          <div className={`flex flex-col gap-0.5 text-slate-400 ${isDashboard ? 'text-[6px] leading-tight' : 'text-[8px]'}`}>
             <div className="flex justify-between">
               <span>STATE:</span>
-              <span className="font-bold text-slate-200">COMPENSATORY VENTR</span>
+              <span className="font-bold text-slate-200">COMPENSATORY VENT</span>
             </div>
-            <div className="flex justify-between text-[7px] gap-2 mt-0.5">
+            <div className={`flex justify-between gap-1 ${isDashboard ? 'text-[5.5px] mt-0.5' : 'text-[7px] mt-0.5'}`}>
               <span>BPM: <strong className="text-slate-100">{bpm}</strong></span>
               <span>SpO2: <strong className="text-slate-100">{oxygen}%</strong></span>
-              <span>GLUCOSE: <strong className="text-slate-100">{glucose}</strong></span>
+              <span>GLUC: <strong className="text-slate-100">{glucose}</strong></span>
             </div>
           </div>
-          <MiniSvgWave color="#00ccff" speed={1.2} amplitude={6} type="sine" />
-          <div className="text-[7px] font-bold text-[#00ccff] animate-pulse tracking-wide uppercase mt-0.5 flex items-center gap-1">
-            <AlertTriangle className="w-2 h-2" />
-            STATUS: KUSSMAUL HYPERVENTILATION
+          <MiniSvgWave color="#00ccff" speed={1.2} amplitude={6} type="sine" className={isDashboard ? 'w-24 h-3.5' : 'w-28 h-6'} />
+          <div className={`font-bold text-[#00ccff] animate-pulse tracking-wide uppercase flex items-center gap-1 ${isDashboard ? 'text-[5.5px] mt-0.5' : 'text-[7px] mt-0.5'}`}>
+            <AlertTriangle className={isDashboard ? 'w-1.5 h-1.5' : 'w-2 h-2'} />
+            STATUS: HYPERVENT.
           </div>
         </div>
       </Html>
 
       {/* C. MYOCARDIAL STRESS (Heart - Center Left) */}
-      <Html position={[-1.7, 0.46, 0]} center distanceFactor={4.8} style={{ pointerEvents: 'none' }}>
+      <Html position={[-sideOffset, 0.46, 0]} center distanceFactor={isDashboard ? 3.2 : 4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          className="p-3 rounded border font-mono select-none pointer-events-auto cursor-default w-52 flex flex-col gap-1.5 bg-[#080d0a]/92 border-[#ff2b56] text-slate-100 shadow-[0_0_15px_rgba(255,43,86,0.25)] opacity-100"
+          className={`font-mono select-none pointer-events-auto cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
+            isDashboard 
+              ? 'p-1.5 rounded-xs w-[128px] gap-0.5 border-[#ff2b56]/60 shadow-[0_0_8px_rgba(255,43,86,0.18)]' 
+              : 'p-3 rounded w-52 gap-1.5 border-[#ff2b56] shadow-[0_0_15px_rgba(255,43,86,0.25)] opacity-100'
+          }`}
         >
-          <div className="flex items-center justify-between text-[7px] border-b border-white/5 pb-1">
+          <div className={`flex items-center justify-between border-b border-white/5 ${isDashboard ? 'text-[5.5px] pb-0.5' : 'text-[7px] pb-1'}`}>
             <span className="font-semibold text-[#ff2b56] tracking-widest flex items-center gap-1">
-              <Heart className="w-2.5 h-2.5" />
+              <Heart className={isDashboard ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
               MYOCARDIAL STRESS
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-[#ff2b56] animate-pulse"></span>
+            <span className={`w-1.5 h-1.5 rounded-full bg-[#ff2b56] animate-pulse`}></span>
           </div>
-          <div className="flex flex-col gap-0.5 text-[8px] text-slate-400">
+          <div className={`flex flex-col gap-0.5 text-slate-400 ${isDashboard ? 'text-[6px] leading-tight' : 'text-[8px]'}`}>
             <div className="flex justify-between">
               <span>PATHOLOGY:</span>
-              <span className="font-bold text-slate-200">CARDIOCYTE ACCELERATION</span>
+              <span className="font-bold text-slate-200">CARDIOCYTE ACCEL</span>
             </div>
-            <div className="flex justify-between text-[7px] gap-2 mt-0.5">
+            <div className={`flex justify-between gap-1 ${isDashboard ? 'text-[5.5px] mt-0.5' : 'text-[7px] mt-0.5'}`}>
               <span>BPM: <strong className="text-[#ff2b56] font-bold">{bpm}</strong></span>
               <span>SpO2: <strong className="text-slate-100">{oxygen}%</strong></span>
               <span>GLUC: <strong className="text-slate-100">{glucose}</strong></span>
             </div>
           </div>
-          <MiniSvgWave color="#ff2b56" speed={1.8} amplitude={9} type="ecg" />
-          <div className="text-[7px] font-bold text-[#ff2b56] animate-pulse tracking-wide uppercase mt-0.5 flex items-center gap-1">
-            <AlertTriangle className="w-2 h-2" />
-            STATUS: SINUS TACHYCARDIA
+          <MiniSvgWave color="#ff2b56" speed={1.8} amplitude={9} type="ecg" className={isDashboard ? 'w-24 h-3.5' : 'w-28 h-6'} />
+          <div className={`font-bold text-[#ff2b56] animate-pulse tracking-wide uppercase flex items-center gap-1 ${isDashboard ? 'text-[5.5px] mt-0.5' : 'text-[7px] mt-0.5'}`}>
+            <AlertTriangle className={isDashboard ? 'w-1.5 h-1.5' : 'w-2 h-2'} />
+            STATUS: TACHYCARDIA
           </div>
         </div>
       </Html>
 
       {/* D. METABOLIC GLUCOSE CRISIS (Liver - Bottom Right) */}
-      <Html position={[1.7, -0.4, 0]} center distanceFactor={4.8} style={{ pointerEvents: 'none' }}>
+      <Html position={[sideOffset, -0.4, 0]} center distanceFactor={isDashboard ? 3.2 : 4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          className="p-3 rounded border font-mono select-none pointer-events-auto cursor-default w-52 flex flex-col gap-1.5 bg-[#080d0a]/92 border-[#ff9900] text-slate-100 shadow-[0_0_15px_rgba(255,153,0,0.25)] opacity-100"
+          className={`font-mono select-none pointer-events-auto cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
+            isDashboard 
+              ? 'p-1.5 rounded-xs w-[128px] gap-0.5 border-[#ff9900]/60 shadow-[0_0_8px_rgba(255,153,0,0.18)]' 
+              : 'p-3 rounded w-52 gap-1.5 border-[#ff9900] shadow-[0_0_15px_rgba(255,153,0,0.25)] opacity-100'
+          }`}
         >
-          <div className="flex items-center justify-between text-[7px] border-b border-white/5 pb-1">
+          <div className={`flex items-center justify-between border-b border-white/5 ${isDashboard ? 'text-[5.5px] pb-0.5' : 'text-[7px] pb-1'}`}>
             <span className="font-semibold text-[#ff9900] tracking-widest flex items-center gap-1">
-              <Shield className="w-2.5 h-2.5" />
-              METABOLIC GLUCOSE CRISIS
+              <Shield className={isDashboard ? 'w-2 h-2' : 'w-2.5 h-2.5'} />
+              METABOLIC CRISIS
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-[#ff9900] animate-pulse"></span>
+            <span className={`w-1.5 h-1.5 rounded-full bg-[#ff9900] animate-pulse`}></span>
           </div>
-          <div className="flex flex-col gap-0.5 text-[8px] text-slate-400">
+          <div className={`flex flex-col gap-0.5 text-slate-400 ${isDashboard ? 'text-[6px] leading-tight' : 'text-[8px]'}`}>
             <div className="flex justify-between">
               <span>METABOLIC STATE:</span>
               <span className="font-bold text-slate-200">HEPATIC GLUCOSE SPIKE</span>
             </div>
-            <div className="flex justify-between text-[7px] gap-2 mt-0.5">
-              <span>GLUCOSE: <strong className="text-[#ff9900] font-bold">{glucose} mg/dL</strong></span>
+            <div className={`flex justify-between gap-1 ${isDashboard ? 'text-[5.5px] mt-0.5' : 'text-[7px] mt-0.5'}`}>
+              <span>GLUC: <strong className="text-[#ff9900] font-bold">{glucose} mg/dL</strong></span>
               <span>SpO2: <strong className="text-slate-100">{oxygen}%</strong></span>
               <span>BPM: <strong className="text-slate-100">{bpm}</strong></span>
             </div>
           </div>
-          <MiniSvgWave color="#ff9900" speed={0.8} amplitude={4} type="flat" />
-          <div className="text-[7px] font-bold text-red-500/80 animate-pulse tracking-wide uppercase mt-0.5 flex items-center gap-1">
-            <AlertTriangle className="w-2 h-2" />
-            STATUS: INSULIN SATURATION LIMITS
+          <MiniSvgWave color="#ff9900" speed={0.8} amplitude={4} type="flat" className={isDashboard ? 'w-24 h-3.5' : 'w-28 h-6'} />
+          <div className={`font-bold text-red-500/80 animate-pulse tracking-wide uppercase flex items-center gap-1 ${isDashboard ? 'text-[5.5px] mt-0.5' : 'text-[7px] mt-0.5'}`}>
+            <AlertTriangle className={isDashboard ? 'w-1.5 h-1.5' : 'w-2 h-2'} />
+            STATUS: INSULIN LIMIT
           </div>
         </div>
       </Html>
@@ -1327,13 +1347,13 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
         <spotLight position={[-5, 5, 5]} angle={0.4} penumbra={1} intensity={1.5} color="#c040ff" />
         <pointLight position={[0, -2, 3]} intensity={0.8} color="#00ffaa" />
         
-        <HologramScene />
+        <HologramScene isDashboard={transparent} />
         
         <CameraController controlsRef={orbitRef} />
         
         <OrbitControls
           ref={orbitRef}
-          enableDamping
+          enableDamping={!transparent}
           dampingFactor={0.08}
           rotateSpeed={0.8}
           maxPolarAngle={Math.PI / 2 + 0.15}
@@ -1341,8 +1361,9 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
           maxDistance={8.0}
           enablePan={false}
           enableZoom={!transparent}
+          enableRotate={!transparent}
           zoomSpeed={0.6}
-          autoRotate={transparent}
+          autoRotate={!transparent}
           autoRotateSpeed={0.8}
         />
       </Canvas>
