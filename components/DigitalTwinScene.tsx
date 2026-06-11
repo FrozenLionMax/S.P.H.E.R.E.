@@ -712,6 +712,14 @@ function HologramScene() {
   const oxygen = useTelemetryStore((s) => s.liveTelemetryFrame.oxygenSaturation)
   const glucose = useTelemetryStore((s) => s.liveTelemetryFrame.glucose)
   const brainwaveFreq = useTelemetryStore((s) => s.liveTelemetryFrame.brainwaveFrequency)
+  const selectedOrgan = useTelemetryStore((s) => s.selectedOrgan)
+
+  const isGhost = wireframeMode === 'dots'
+  const activeOpacity = isGhost ? 0.08 : 0.95
+  const inactiveOpacity = 0.05
+
+  const targetLungOpacity = selectedOrgan === 'none' || selectedOrgan === 'lungs' ? activeOpacity : inactiveOpacity
+  const targetHeartOpacity = selectedOrgan === 'none' || selectedOrgan === 'heart' ? activeOpacity : inactiveOpacity
 
   // Cursor pointer handler
   const setCursor = (type: string) => {
