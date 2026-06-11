@@ -541,8 +541,10 @@ export default function Page() {
         clock={clock}
         setIsOnboarded={setIsOnboarded}
         audioCtx={audioCtx}
-        envMetric={envMetric}
-        envSt={envSt}
+        temp={temp}
+        tempSt={tempSt}
+        pressure={pressure}
+        pressureSt={pressureSt}
       />
 
       <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto lg:overflow-hidden relative z-20">
@@ -664,25 +666,8 @@ export default function Page() {
               </GlassPanel>
             </div>
 
-            {/* Bottom Row stats: Environmental, Sensor Hardware status, Subsystems health */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-              <GlassPanel className="rounded-xl p-4 flex flex-col gap-3" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                <SectionLabel>Environmental</SectionLabel>
-                <HBar label="Body Temp" value={fmt(temp, 1)} unit="°F" pct={pct(temp, 96, 102)} color={C.green} />
-                <HBar
-                  label={activeTrackKey === 'ASTRONAUT' ? 'Suit Pressure' : 'Cabin Pressure'}
-                  value={fmt(pressure, 2)}
-                  unit="psi"
-                  pct={
-                    activeTrackKey === 'ASTRONAUT'
-                      ? pct(pressure, 2.5, 5.0)
-                      : activeTrackKey === 'PILOT'
-                        ? pct(pressure, 8.0, 16.0)
-                        : pct(pressure, 12.0, 16.0)
-                  }
-                  color={C.cyan}
-                />
-              </GlassPanel>
+            {/* Bottom Row stats: Sensor Hardware status, Subsystems health */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
 
               <GlassPanel className="rounded-xl p-4 flex flex-col gap-3" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                 <SectionLabel>Sensor Hardware</SectionLabel>

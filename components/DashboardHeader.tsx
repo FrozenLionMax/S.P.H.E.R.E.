@@ -23,8 +23,10 @@ interface DashboardHeaderProps {
   clock: string;
   setIsOnboarded: (val: boolean) => void;
   audioCtx: any;
-  envMetric: number;
-  envSt: StatusType;
+  temp: number;
+  tempSt: StatusType;
+  pressure: number;
+  pressureSt: StatusType;
 }
 
 export default function DashboardHeader({
@@ -43,8 +45,10 @@ export default function DashboardHeader({
   clock,
   setIsOnboarded,
   audioCtx,
-  envMetric,
-  envSt
+  temp,
+  tempSt,
+  pressure,
+  pressureSt
 }: DashboardHeaderProps) {
   const router = useRouter();
 
@@ -108,9 +112,17 @@ export default function DashboardHeader({
             />
           </div>
           <div className="flex flex-col items-end justify-center ml-1 pl-3 border-l border-white/5">
-            <span className="text-[8px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>Environment</span>
-            <span className="text-[10px] font-mono font-bold" style={{ color: STATUS[envSt] }}>
-              {fmt(envMetric, activeTrackKey === 'SURGEON' ? 3 : 1)}<span className="text-[8px] font-normal text-slate-500 ml-0.5">{trackConf.metricUnit}</span>
+            <span className="text-[8px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>Body Temp</span>
+            <span className="text-[10px] font-mono font-bold" style={{ color: STATUS[tempSt] }}>
+              {fmt(temp, 1)}<span className="text-[8px] font-normal text-slate-500 ml-0.5">°F</span>
+            </span>
+          </div>
+          <div className="flex flex-col items-end justify-center ml-1 pl-3 border-l border-white/5">
+            <span className="text-[8px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>
+              {activeTrackKey === 'ASTRONAUT' ? 'Suit Pres' : 'Cabin Pres'}
+            </span>
+            <span className="text-[10px] font-mono font-bold" style={{ color: STATUS[pressureSt] }}>
+              {fmt(pressure, 2)}<span className="text-[8px] font-normal text-slate-500 ml-0.5">psi</span>
             </span>
           </div>
         </div>
