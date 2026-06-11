@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { C, TrackKey, TRACK_CONFIGS } from '@/lib/constants';
+import { C, TrackKey, TRACK_CONFIGS, STATUS, StatusType } from '@/lib/constants';
 import { fmt } from '@/lib/helpers';
 import ECG from '@/components/ECG';
 import { SignalBars } from '@/components/TrackVisualizer';
@@ -23,6 +23,8 @@ interface DashboardHeaderProps {
   clock: string;
   setIsOnboarded: (val: boolean) => void;
   audioCtx: any;
+  envMetric: number;
+  envSt: StatusType;
 }
 
 export default function DashboardHeader({
@@ -40,7 +42,9 @@ export default function DashboardHeader({
   setShowShortcuts,
   clock,
   setIsOnboarded,
-  audioCtx
+  audioCtx,
+  envMetric,
+  envSt
 }: DashboardHeaderProps) {
   const router = useRouter();
 
@@ -88,7 +92,7 @@ export default function DashboardHeader({
             </span>
           </div>
           <div
-            className="h-9 w-32 rounded-sm overflow-hidden flex items-center justify-center"
+            className="h-9 w-32 rounded-sm overflow-hidden flex items-center justify-center mr-1"
             style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.05)' }}
           >
             <ECG
@@ -102,6 +106,12 @@ export default function DashboardHeader({
               audioCtx={audioCtx}
               volume={volume}
             />
+          </div>
+          <div className="flex flex-col items-end justify-center ml-1 pl-3 border-l border-white/5">
+            <span className="text-[8px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>Environment</span>
+            <span className="text-[10px] font-mono font-bold" style={{ color: STATUS[envSt] }}>
+              {fmt(envMetric, activeTrackKey === 'SURGEON' ? 3 : 1)}<span className="text-[8px] font-normal text-slate-500 ml-0.5">{trackConf.metricUnit}</span>
+            </span>
           </div>
         </div>
 

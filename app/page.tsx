@@ -541,6 +541,8 @@ export default function Page() {
         clock={clock}
         setIsOnboarded={setIsOnboarded}
         audioCtx={audioCtx}
+        envMetric={envMetric}
+        envSt={envSt}
       />
 
       <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto lg:overflow-hidden relative z-20">
@@ -598,7 +600,7 @@ export default function Page() {
             </div>
 
             {/* Dashboard Visualizer Grid: 3D Biometric Matrix, Trend, Cardiac ECG */}
-            <div className="grid gap-3 grid-cols-1 lg:grid-cols-[250px_1fr_420px]">
+            <div className="grid gap-3 grid-cols-1 lg:grid-cols-[300px_1fr_420px]">
               <GlassPanel className="rounded-xl overflow-hidden relative flex flex-col" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                 <div className="flex items-center justify-between px-4 py-3 shrink-0 relative z-10" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}>
                   <div className="flex items-center gap-4">
@@ -608,7 +610,7 @@ export default function Page() {
                 </div>
                 
                 {/* 3D Hologram slot - Lazy loaded */}
-                <div className="flex-1 w-full min-h-[160px] relative z-0">
+                <div className="flex-1 w-full min-h-[220px] relative z-0">
                   <LazyDigitalTwinScene transparent={true} />
                 </div>
                 
