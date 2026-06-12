@@ -101,13 +101,77 @@ export interface TelemetryPayload {
   warningTriggers?: Array<{ type: string; status: string; message: string }>;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: resolve the base API URL for SSE stream and command endpoints
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getBaseUrl(): string {
+  if (typeof window === 'undefined') return 'http://localhost:8080';
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (isLocal) {
+    const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
+    return `${window.location.protocol}//${window.location.hostname}:${port}`;
+  }
+  return `${window.location.protocol}//${window.location.host}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session ID: unique per browser tab so each device runs independently
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _sessionId: string | null = null;
+
+function getSessionId(): string {
+  if (_sessionId) return _sessionId;
+  if (typeof window !== 'undefined') {
+    // Persist per-tab: survives refresh but not new tabs
+    let id = sessionStorage.getItem('sphere_session_id');
+    if (!id) {
+      id = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      sessionStorage.setItem('sphere_session_id', id);
+    }
+    _sessionId = id;
+    return id;
+  }
+  return 'server';
+}
+
+function getStreamUrl(): string {
+  return `${getBaseUrl()}/api/stream/dashboard?session=${getSessionId()}`;
+}
+
+function getCommandUrl(): string {
+  return `${getBaseUrl()}/api/command`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Send command to server via HTTP POST (replaces WebSocket send)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function sendCommand(body: Record<string, unknown>): Promise<void> {
+  try {
+    await fetch(getCommandUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, sessionId: getSessionId() }),
+    });
+  } catch (err) {
+    console.error('[Telemetry] Failed to send command:', err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Hook: SSE-based Dashboard Telemetry (replaces WebSocket)
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function useTelemetry() {
   const [samples, setSamples] = useState<TelemetryPayload[]>([]);
   const [isCrisis, setIsCrisis] = useState(false);
   const [connected, setConnected] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   
-  const wsRef = useRef<WebSocket | null>(null);
   const isPausedRef = useRef(false);
 
   const togglePause = useCallback(() => {
@@ -119,35 +183,22 @@ export function useTelemetry() {
   }, []);
 
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectAttempts = 0;
+    let eventSource: EventSource | null = null;
     let unmounted = false;
-
-    function getWsUrl() {
-      if (typeof window === 'undefined') return 'ws://localhost:8080';
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      if (isLocal) {
-        const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
-        return `${protocol}//${window.location.hostname}:${port}?t=${Date.now()}`;
-      }
-      return `${protocol}//${window.location.host}?t=${Date.now()}`;
-    }
 
     function connect() {
       if (unmounted) return;
-      const wsUrl = getWsUrl();
-      ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
 
-      ws.onopen = () => {
-        console.log('[Telemetry] WebSocket connected');
+      const url = getStreamUrl();
+      console.log(`[Telemetry] Connecting to SSE stream: ${url}`);
+      eventSource = new EventSource(url);
+
+      eventSource.onopen = () => {
+        console.log('[Telemetry] SSE stream connected');
         setConnected(true);
-        reconnectAttempts = 0;
       };
 
-      ws.onmessage = (event) => {
+      eventSource.onmessage = (event) => {
         if (isPausedRef.current) return;
         try {
           const payload: TelemetryPayload = JSON.parse(event.data);
@@ -160,25 +211,16 @@ export function useTelemetry() {
             return newSamples;
           });
         } catch (err) {
-          console.error('[Telemetry] Error parsing message', err);
+          console.error('[Telemetry] Error parsing SSE message', err);
         }
       };
 
-      ws.onclose = () => {
-        console.log('[Telemetry] WebSocket disconnected');
+      eventSource.onerror = () => {
+        // EventSource has native auto-reconnect built in.
+        // It will automatically retry the connection after a brief delay.
+        // We just update the UI status here.
+        console.warn('[Telemetry] SSE connection error — browser will auto-reconnect');
         setConnected(false);
-        wsRef.current = null;
-        // Auto-reconnect with exponential backoff (max 10s)
-        if (!unmounted) {
-          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 10000);
-          reconnectAttempts++;
-          console.log(`[Telemetry] Reconnecting in ${Math.round(delay)}ms...`);
-          reconnectTimer = setTimeout(connect, delay);
-        }
-      };
-
-      ws.onerror = () => {
-        // onerror is always followed by onclose, so reconnect happens there
       };
     }
 
@@ -186,53 +228,43 @@ export function useTelemetry() {
 
     return () => {
       unmounted = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (ws) ws.close();
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
     };
   }, []);
 
+  // ── Command Actions (HTTP POST instead of WebSocket send) ──
+
   const triggerCrisisMode = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'INITIATE_CRISIS' }));
-    }
+    sendCommand({ type: 'INITIATE_CRISIS' });
   }, []);
 
   const resolveCrisisMode = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'RESOLVE_CRISIS' }));
-    }
+    sendCommand({ type: 'RESOLVE_CRISIS' });
   }, []);
 
   const setTrack = useCallback((track: string) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'SET_TRACK', track }));
-    }
+    sendCommand({ type: 'SET_TRACK', track });
     // Optimistically clear samples on track change to prevent visual glitches
     setSamples([]);
   }, []);
 
   const executeSubsystem = useCallback((cmd: string) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'EXECUTE_SUBSYSTEM', cmd }));
-    }
+    sendCommand({ type: 'EXECUTE_SUBSYSTEM', cmd });
   }, []);
 
   const clearLogs = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'CLEAR_LOGS' }));
-    }
+    sendCommand({ type: 'CLEAR_LOGS' });
   }, []);
 
   const startDemo = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'START_DEMO' }));
-    }
+    sendCommand({ type: 'START_DEMO' });
   }, []);
 
   const stopDemo = useCallback(() => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'STOP_DEMO' }));
-    }
+    sendCommand({ type: 'STOP_DEMO' });
   }, []);
 
   return {

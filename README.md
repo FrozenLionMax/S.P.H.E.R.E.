@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js" alt="Next.js" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" />
   <img src="https://img.shields.io/badge/Three.js-WebGL-000000?style=flat-square&logo=three.js" alt="Three.js" />
-  <img src="https://img.shields.io/badge/WebSockets-Real--Time-010101?style=flat-square&logo=socket.io" alt="WebSockets" />
+  <img src="https://img.shields.io/badge/SSE-Real--Time_Streaming-010101?style=flat-square&logo=lightning" alt="SSE" />
   <img src="https://img.shields.io/badge/Zustand-State-443b30?style=flat-square" alt="Zustand" />
   <img src="https://img.shields.io/badge/Framer_Motion-Animations-0055FF?style=flat-square&logo=framer" alt="Framer Motion" />
 </p>
@@ -37,8 +37,9 @@ In safety-critical domains—such as commercial flight decks, high-speed rail ca
 
 ### 2. High-Capacity Scalability
 S.P.H.E.R.E. is architected around a highly scalable decoupled model:
-- **Multi-Sensor Edge Ingestion**: The standardized WebSocket schema permits hundreds of wearable sensor nodes to register and stream data concurrently.
+- **Multi-Sensor Edge Ingestion**: The standardized SSE + WebSocket dual-mode schema permits hundreds of wearable sensor nodes to register and stream data concurrently.
 - **Modular Profile Store**: Zustand state management isolates operator domains, allowing new industries (e.g. deep-sea diving, drone flight) to be added with minimal configuration.
+- **Per-Session Isolation**: Each connected device receives its own independent simulation state, recovery buffers, and crisis engine — so multiple operators can be monitored simultaneously without cross-contamination.
 - **Dynamic Broker**: The server broker handles parallel telemetry streams, computes rolling calculations on the fly, and routes data frames dynamically without compilation overhead.
 
 ### 3. Architectural Uniqueness
@@ -135,9 +136,10 @@ S.P.H.E.R.E./
 ├── components/
 │   └── DigitalTwinScene.tsx      # Three.js WebGL hologram (organs, skeleton, particles)
 ├── lib/
-│   ├── useTelemetry.ts            # WebSocket hook for real-time data consumption
+│   ├── useTelemetry.ts            # SSE EventSource hook for real-time data consumption
 │   └── useTelemetryStore.ts       # Zustand store with auto-reconnect & atomic selectors
-├── server.js                      # Node.js WebSocket telemetry simulation engine
+├── server.js                      # Node.js SSE telemetry simulation engine with per-session state
+├── Dockerfile                     # Production container image for Cloud Run deployment
 └── public/                        # Static assets
 ```
 
@@ -151,9 +153,10 @@ S.P.H.E.R.E./
 | **Charts** | Recharts | Polar radar, area charts, trend lines |
 | **Waveforms** | Canvas API | 60fps ECG rendering |
 | **State** | Zustand | Global telemetry store with atomic selectors |
-| **Real-Time** | WebSockets (ws) | Bidirectional telemetry streaming |
+| **Real-Time** | SSE (EventSource) + HTTP POST | Unidirectional telemetry streaming + command dispatch |
 | **Audio** | Web Audio API | Programmatic alarm synthesis |
-| **Server** | Node.js, Express | Telemetry simulation & WebSocket engine |
+| **Server** | Node.js, Express | Telemetry simulation engine with per-session isolation |
+| **Deployment** | Google Cloud Run, Docker | Containerized production deployment with auto-scaling |
 | **Export** | html2canvas-pro | High-fidelity screenshot capture |
 
 ---
@@ -179,12 +182,14 @@ The sections below outline the core algorithms, dual-mode telemetry configuratio
                       +-----------------------------+
                       |      Node.js server.js      |
                       |  - Ingestion Engine         |
+                      |  - Per-Session State Mgr    |
                       |  - Fallback Homeostasis Sim |
                       +--------------┬--------------+
                                      │
                                      ▼ (State Serialization Broadcast)
                       +-----------------------------+
                       |      Next.js Dashboard      |
+                      |  - SSE EventSource Client   |
                       |  - WebGL Digital Twin       |
                       |  - Rolling Z-Score Alerts   |
                       +-----------------------------+
@@ -205,7 +210,7 @@ To convert raw optical measurements from the bio-sensor pack into stable, calibr
 
 ### 2. Dual-Mode Telemetry Ingestion
 S.P.H.E.R.E. manages data flows through a dual-mode communication broker inside the backend gateway:
-- **Mathematical Simulation Mode**: When no physical hardware is connected, the server maintains an active simulation state. It applies homeostasis models coupled with an elastic random jitter generator (`applyJitter`) to feed all metric cards and charts.
+- **Mathematical Simulation Mode**: When no physical hardware is connected, the server maintains an active simulation state per session. It applies homeostasis models coupled with an elastic random jitter generator (`applyJitter`) to feed all metric cards and charts. Each browser tab receives its own independent session with isolated state, recovery buffers, and crisis engine — ensuring multiple operators can be monitored simultaneously without interference.
 - **Hardware Telemetry Overrides**: When the ESP32 registers with the WebSocket gateway, it transmits a `sensor_pack` header. The server intercepts this connection, flags it as a hardware node (blocking dashboard broadcast loops to save ESP32 power), and directly overwrites the active simulation values with raw physical sensor telemetry. The cockpit frontend instantly reflects the wearer's real-time vitals.
 
 ### 3. WebSocket API Schema Reference
@@ -278,6 +283,49 @@ For full technical specifications, I2C circuit mappings, a detailed Bill of Mate
 
 ---
 
+## ☁️ Cloud Run Deployment Architecture
+
+S.P.H.E.R.E. is deployed as a containerized application on **Google Cloud Run**, providing production-grade scalability, zero-downtime deployments, and global edge availability.
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                     Google Cloud Run                             │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │              Docker Container (node server.js)              │ │
+│  │                                                             │ │
+│  │   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐ │ │
+│  │   │  Express.js   │    │  Next.js SSR  │    │  Session Mgr │ │ │
+│  │   │  API Routes   │    │  Pages + API  │    │  State Store │ │ │
+│  │   └──────┬───────┘    └──────┬───────┘    └──────┬───────┘ │ │
+│  │          │                   │                   │         │ │
+│  │   ┌──────┴───────────────────┴───────────────────┴───────┐ │ │
+│  │   │           Unified HTTP Server (Port 8080)            │ │ │
+│  │   │  • SSE Streams (dashboard + simulation)              │ │ │
+│  │   │  • POST Command Handler                              │ │ │
+│  │   │  • WebSocket Upgrade (hardware sensors)              │ │ │
+│  │   │  • 15s Keepalive + Transfer-Encoding: chunked        │ │ │
+│  │   └──────────────────────────────────────────────────────┘ │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                              ▲                                   │
+│                    GFE Proxy (HTTPS + TLS)                       │
+└──────────────────────────────┬───────────────────────────────────┘
+                               │
+            ┌──────────────────┼──────────────────┐
+            │                  │                  │
+      🖥️ Desktop         📱 Mobile          🔧 ESP32
+      (Session A)        (Session B)       (Hardware)
+      SSE + POST         SSE + POST       WebSocket
+```
+
+**Key Production Optimizations:**
+- **SSE over WebSocket**: Cloud Run's Google Frontend (GFE) proxy blocks WebSocket `Upgrade` handshakes. S.P.H.E.R.E. uses Server-Sent Events for browser clients, which pass through GFE as standard HTTP.
+- **`res.flushHeaders()` + `Transfer-Encoding: chunked`**: Forces immediate data delivery through GFE's buffering layer.
+- **15-second keepalive comments**: Prevents Cloud Run from terminating idle SSE connections.
+- **Per-session isolation**: Each connected device receives its own simulation loop, state, and crisis engine — sessions auto-cleanup after 60 seconds of inactivity.
+- **Auto-scaling to zero**: When no traffic is flowing, Cloud Run scales to zero containers, incurring zero cost. First request cold-starts in ~2-5 seconds.
+
+---
+
 ## ⚙️ Getting Started
 
 ### Prerequisites
@@ -289,20 +337,29 @@ For full technical specifications, I2C circuit mappings, a detailed Bill of Mate
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Prizzm/S.P.H.E.R.E..git
+git clone https://github.com/FrozenLionMax/S.P.H.E.R.E..git
 cd S.P.H.E.R.E.
 
 # 2. Install dependencies
 npm install
 
-# 3. Start the WebSocket telemetry server (runs on port 8080)
-node server.js
+# 3. Build the Next.js frontend
+npm run build
 
-# 4. In a new terminal, start the Next.js dashboard
-npm run dev
+# 4. Start the unified server (serves both frontend + telemetry API on port 8080)
+node server.js
 ```
 
-Once both services are running, navigate to the local host address: [http://localhost:3000](http://localhost:3000) to access the S.P.H.E.R.E. Cockpit console interface.
+Navigate to [http://localhost:8080](http://localhost:8080) to access the S.P.H.E.R.E. Cockpit console interface.
+
+For development mode with hot-reload:
+```bash
+# Terminal 1: Start the telemetry server
+node server.js
+
+# Terminal 2: Start the Next.js dev server
+npm run dev
+```
 
 ### Quick Start
 
@@ -314,6 +371,19 @@ Once both services are running, navigate to the local host address: [http://loca
 
 ---
 
+## 🔮 Future Scope
+
+S.P.H.E.R.E. is architected as a foundation for a much larger autonomous safety ecosystem. The current software-first cockpit demonstrates the core telemetry, visualization, and crisis-intervention pipeline — but the roadmap extends into several transformative directions:
+
+- **Physical Biosensor Manufacturing**: The ESP32 firmware, KiCad PCB schematics, and 3D-printable casing STL files are fully engineered and included in the `/hardware/` directory. The next milestone is physical fabrication of the wearable sensor pack, enabling real-world deployment with live physiological data replacing the simulation engine.
+- **Machine Learning Anomaly Prediction**: Replacing the current rolling Z-Score algorithm with trained LSTM and Transformer-based time-series models that learn operator-specific baselines over weeks of data, predicting fatigue episodes and cardiac events 10-15 minutes before onset — a shift from statistical alerting to true predictive medicine.
+- **Multi-Operator Fleet Monitoring**: Scaling from single-operator cockpits to fleet-wide command centers where a single supervisor monitors 50+ operators simultaneously (e.g., an entire train network or surgical ward), with AI-ranked priority queues surfacing the most at-risk individuals first.
+- **Edge AI on Wearable**: Migrating lightweight anomaly detection models (TensorFlow Lite) directly onto the ESP32 microcontroller, enabling sub-second crisis detection even when network connectivity is lost — critical for astronauts during EVA or truckers in dead zones.
+- **Federated Learning Across Sectors**: Training cross-domain models where anonymized fatigue patterns from truckers improve pilot monitoring, and surgical tremor data enhances astronaut dexterity tracking — creating a universal human performance corpus without compromising privacy.
+- **Regulatory Compliance Pipeline**: Integrating with aviation (DO-178C), rail (EN 50128), and medical device (IEC 62304) safety certification frameworks to bring S.P.H.E.R.E. from prototype to production-certified safety system.
+
+---
+
 ## 📄 License
 
 This project is open source. See the repository for license details.
@@ -321,5 +391,5 @@ This project is open source. See the repository for license details.
 ---
 
 <p align="center">
-  <sub>Built with ❤️ for high-stakes operational safety</sub>
+  <sub>Built with ❤️ by Team Prizzm — for high-stakes operational safety</sub>
 </p>

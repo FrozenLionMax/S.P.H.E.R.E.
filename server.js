@@ -15,6 +15,17 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
+// CORS middleware for /api routes (dev: port 3000 → 8080 cross-origin)
+app.use('/api', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 const dev = process.env.NODE_ENV !== 'production';
 const startNext = process.env.NODE_ENV === 'production' || process.env.UNIFIED_SERVER === 'true';
 let nextApp = null;
@@ -31,19 +42,14 @@ function nowTime() {
   return d.toTimeString().split(' ')[0];
 }
 
-let localLogs = [
-  { id: Date.now(), time: nowTime(), level: 'SYS', msg: 'Kernel v4.2.1 initialized.' }
-];
+// SSE client tracking (simulation SSE clients are per-connection, not per-session)
+let simulationSSEClients = new Map(); // Map<res, { mode, timer }>
 
-function addLog(level, msg) {
-  localLogs.push({
-    id: Date.now() + Math.random(),
-    time: nowTime(),
-    level,
-    msg
-  });
-  if (localLogs.length > 50) {
-    localLogs.shift();
+function sendSSE(res, data) {
+  if (!res.writableEnded) {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    // Force flush to prevent Cloud Run / GFE proxy buffering
+    if (typeof res.flush === 'function') res.flush();
   }
 }
 
@@ -56,81 +62,96 @@ const TRACKS = {
   TRUCKER:     { envBase: 95,   envCrisisDelta: -4.0,  spO2Delta: -1.0, hrDelta: 3 },
 };
 
-// Global state
-let state = {
-  heartRate: 75,
-  spO2: 98.2,
-  glucose: 100,
-  respiratoryRate: 16,
-  cognitiveLatency: 210,
-  environmentMetric: TRACKS.PILOT.envBase,
-  isCrisisActive: false,
-  activeTrack: 'PILOT',
-  isDemoActive: false,
-  demoTime: 0,
+// ─── SESSION MANAGEMENT ──────────────────────────────────────────────────────
 
-  // Dynamic simulated metrics
-  temperature: 98.6,
-  pressure: 14.7,
+const sessions = new Map(); // sessionId -> session object
+const SESSION_TTL = 60000;  // 60s grace period for reconnects
 
-  // Subsystem statuses
-  subsystems: {
-    neuralInterface: 'ONLINE',
-    biometricSensors: 'ONLINE',
-    telemetryRelay: 'ONLINE',
-    cognitiveProc: 'ONLINE',
-    atmosMonitor: 'ONLINE'
-  },
+function createDefaultState() {
+  return {
+    heartRate: 75, spO2: 98.2, glucose: 100, respiratoryRate: 16,
+    cognitiveLatency: 210, environmentMetric: TRACKS.PILOT.envBase,
+    isCrisisActive: false, activeTrack: 'PILOT', isDemoActive: false, demoTime: 0,
+    temperature: 98.6, pressure: 14.7,
+    subsystems: {
+      neuralInterface: 'ONLINE', biometricSensors: 'ONLINE',
+      telemetryRelay: 'ONLINE', cognitiveProc: 'ONLINE', atmosMonitor: 'ONLINE'
+    },
+    perclos: 3.5, microCorrections: 45, fatigueIndex: 4.8,
+    gForce: 1.0, pwtt: 220, spO2Desat: 0.1,
+    transthoracicImpedance: 98.0, pCO2: 2.5, suitPressure: 4.3, scrubberFlow: 6.0,
+    tremorAmplitude: 0.02, eda: 1.8, gripForce: 12.0, tremorFreq: 2.1,
+    hrvRatio: 3.2, gripAsymmetry: 2.0, v2vLink: -62, alertness: 96.0
+  };
+}
 
-  // Train Pilot metrics
-  perclos: 3.5,
-  microCorrections: 45,
-  fatigueIndex: 4.8,
+function createDefaultRecoveryBuffers() {
+  return {
+    heartRate: 0, spO2: 0, cognitiveLatency: 0, perclos: 0,
+    microCorrections: 0, gForce: 0, pCO2: 0, suitPressure: 0,
+    tremorAmplitude: 0, eda: 0, gripForce: 0, gripAsymmetry: 0,
+    alertness: 0, v2vLink: 0, respiratoryRate: 0
+  };
+}
 
-  // Aviator / Fighter Pilot metrics
-  gForce: 1.0,
-  pwtt: 220,
-  spO2Desat: 0.1,
+function getOrCreateSession(sessionId) {
+  if (!sessionId) sessionId = 'global';
+  if (sessions.has(sessionId)) {
+    const session = sessions.get(sessionId);
+    // Clear any pending cleanup timer
+    if (session.cleanupTimer) {
+      clearTimeout(session.cleanupTimer);
+      session.cleanupTimer = null;
+    }
+    return session;
+  }
+  const session = {
+    id: sessionId,
+    state: createDefaultState(),
+    recoveryBuffers: createDefaultRecoveryBuffers(),
+    logs: [{ id: Date.now(), time: nowTime(), level: 'SYS', msg: 'Kernel v4.2.1 initialized.' }],
+    demoInterval: null,
+    simInterval: null,
+    sseClients: new Set(), // dashboard SSE clients
+    clientCount: 0,
+    cleanupTimer: null,
+  };
+  // Start per-session simulation loop (1Hz)
+  session.simInterval = setInterval(() => runSimulationTick(session), 1000);
+  sessions.set(sessionId, session);
+  console.log(`[Session] Created session ${sessionId}. Active sessions: ${sessions.size}`);
+  return session;
+}
 
-  // Astronaut metrics
-  transthoracicImpedance: 98.0,
-  pCO2: 2.5,
-  suitPressure: 4.3,
-  scrubberFlow: 6.0,
+function destroySession(sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  if (session.simInterval) clearInterval(session.simInterval);
+  if (session.demoInterval) clearInterval(session.demoInterval);
+  if (session.cleanupTimer) clearTimeout(session.cleanupTimer);
+  sessions.delete(sessionId);
+  console.log(`[Session] Destroyed session ${sessionId}. Active sessions: ${sessions.size}`);
+}
 
-  // Surgeon metrics
-  tremorAmplitude: 0.02,
-  eda: 1.8,
-  gripForce: 12.0,
-  tremorFreq: 2.1,
+function scheduleSessionCleanup(sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  if (session.clientCount <= 0 && session.sseClients.size === 0) {
+    session.cleanupTimer = setTimeout(() => destroySession(sessionId), SESSION_TTL);
+  }
+}
 
-  // Trucker metrics
-  hrvRatio: 3.2,
-  gripAsymmetry: 2.0,
-  v2vLink: -62,
-  alertness: 96.0
-};
+// ─── SESSION HELPERS ─────────────────────────────────────────────────────────
 
-// Recovery buffers for gradual pharmacokinetic/system interventions
-let recoveryBuffers = {
-  heartRate: 0,
-  spO2: 0,
-  cognitiveLatency: 0,
-  perclos: 0,
-  microCorrections: 0,
-  gForce: 0,
-  pCO2: 0,
-  suitPressure: 0,
-  tremorAmplitude: 0,
-  eda: 0,
-  gripForce: 0,
-  gripAsymmetry: 0,
-  alertness: 0,
-  v2vLink: 0,
-  respiratoryRate: 0
-};
-
-let demoInterval = null;
+function addSessionLog(session, level, msg) {
+  session.logs.push({
+    id: Date.now() + Math.random(),
+    time: nowTime(),
+    level,
+    msg
+  });
+  if (session.logs.length > 50) session.logs.shift();
+}
 
 // Helper: Calculate ECG wave amplitude based on normalized phase
 function getECGValue(p) {
@@ -174,7 +195,7 @@ function applyJitter(val, min, max, maxDelta) {
 }
 
 // Ensure base metrics are roughly correct when changing tracks or resetting
-function resetStateToTrack(trackName) {
+function resetStateToTrack(state, trackName, session) {
   state.activeTrack = trackName;
   state.isCrisisActive = false;
   state.heartRate = 75;
@@ -195,9 +216,9 @@ function resetStateToTrack(trackName) {
 
   state.isDemoActive = false;
   state.demoTime = 0;
-  if (demoInterval) {
-    clearInterval(demoInterval);
-    demoInterval = null;
+  if (session && session.demoInterval) {
+    clearInterval(session.demoInterval);
+    session.demoInterval = null;
   }
 
   // Resets for all specific fields
@@ -225,10 +246,83 @@ function resetStateToTrack(trackName) {
   state.alertness = 96.0;
 }
 
-// Simulation Loop
-let syncCounter = 0;
+// ─── CRISIS FUNCTIONS (per-session) ──────────────────────────────────────────
 
-setInterval(() => {
+function initiateCrisis(session) {
+  const state = session.state;
+  console.log(`[WS] Crisis initiated for track: ${state.activeTrack} (session: ${session.id})`);
+  state.isCrisisActive = true;
+  addSessionLog(session, 'ALERT', `AUTOMATED OVERRIDE TRIGGERED: CRISIS STATE DETECTED.`);
+  
+  const overrideMsg = state.activeTrack === 'ASTRONAUT' ? "AUTOMATED OVERRIDE: INITIATING EMERGENCY SUIT RE-PRESSURIZATION" :
+                      state.activeTrack === 'PILOT' ? "AUTOMATED PILOT OVERRIDE: INITIATING EMERGENCY FLIGHT DESCENT RADIAN" :
+                      state.activeTrack === 'SURGEON' ? "AUTOMATED OVERRIDE: ENGAGING ROBOTIC STABILIZATION DAMPERS" :
+                      state.activeTrack === 'TRAIN_PILOT' ? "AUTOMATED OVERRIDE: ENGAGING EMERGENCY PNEUMATIC BRAKES" :
+                      "FLEET PLATOON WARNING: EXECUTING DISTRIBUTED V2V SHOULDER PULL-OVER";
+  addSessionLog(session, 'ALERT', overrideMsg);
+
+  const crisisSequences = {
+    TRAIN_PILOT: [
+      "[PERCLOS] Micro-sleep state detected.",
+      "[BRAKES] Stage 1 pneumatic clamp engaged.",
+      "[OVERRIDE] Manual controls bypassed."
+    ],
+    PILOT: [
+      "[HYPOXIA] SpO2 below 83% threshold.",
+      "[AUTO-GCAS] Control stick locked.",
+      "[CLIMB] Wings-level pull-up initiated."
+    ],
+    ASTRONAUT: [
+      "[SCRUBBER] pCO2 spike detected.",
+      "[O2] Auxiliary valve fired.",
+      "[THRUSTER] Return-to-airlock trajectory calculated."
+    ],
+    SURGEON: [
+      "[TREMOR] 8Hz FFT amplitude critical.",
+      "[STABILIZER] Micro-filter engaged.",
+      "[HOLD] Digital scalpel locked in 3D space."
+    ],
+    TRUCKER: [
+      "[HRV] Parasympathetic override detected.",
+      "[V2V] Platoon gap expansion broadcast.",
+      "[NAV] Shoulder pull-over sequence initiated."
+    ]
+  };
+
+  const seq = crisisSequences[state.activeTrack] || [];
+  seq.forEach((msg, i) => {
+    setTimeout(() => {
+      addSessionLog(session, 'ALERT', msg);
+    }, (i + 1) * 500);
+  });
+}
+
+function resolveCrisis(session) {
+  const state = session.state;
+  const recoveryBuffers = session.recoveryBuffers;
+  console.log(`[WS] Stabilization Protocol Engaged for track: ${state.activeTrack} (session: ${session.id})`);
+  state.isCrisisActive = false;
+  // Apply massive recovery buffers to naturally pull them back to homeostasis over 10 seconds
+  recoveryBuffers.heartRate = (75 - state.heartRate) * 1.5;
+  recoveryBuffers.spO2 = (98.2 - state.spO2) * 1.5;
+  recoveryBuffers.glucose = (100 - state.glucose) * 1.5;
+  recoveryBuffers.respiratoryRate = (16 - state.respiratoryRate) * 1.5;
+  recoveryBuffers.cognitiveLatency = (210 - state.cognitiveLatency) * 1.5;
+  recoveryBuffers.pCO2 = (2.5 - state.pCO2) * 1.5;
+  recoveryBuffers.suitPressure = (4.3 - state.suitPressure) * 1.5;
+  recoveryBuffers.tremorAmplitude = (0.02 - state.tremorAmplitude) * 1.5;
+  recoveryBuffers.eda = (1.8 - state.eda) * 1.5;
+  recoveryBuffers.alertness = (96.0 - state.alertness) * 1.5;
+  recoveryBuffers.perclos = (3.5 - state.perclos) * 1.5;
+  recoveryBuffers.gForce = (1.0 - state.gForce) * 1.5;
+  addSessionLog(session, 'OK', `STABILIZATION PROTOCOL ENGAGED. Normalizing vitals.`);
+}
+
+// ─── SIMULATION TICK (per-session, 1Hz) ──────────────────────────────────────
+
+function runSimulationTick(session) {
+  const state = session.state;
+  const recoveryBuffers = session.recoveryBuffers;
   const trackConf = TRACKS[state.activeTrack] || TRACKS.PILOT;
 
   // Apply gradual Pharmacokinetic / System Recovery buffers
@@ -316,10 +410,10 @@ setInterval(() => {
 
     // Dynamic warning logs added to streamed records
     if (state.spO2 < 83 && Math.random() < 0.35) {
-      addLog('ALERT', `[HYPOXIA] SpO2 below 83% threshold: ${state.spO2.toFixed(2)}%`);
+      addSessionLog(session, 'ALERT', `[HYPOXIA] SpO2 below 83% threshold: ${state.spO2.toFixed(2)}%`);
     }
     if (state.heartRate > 120 && Math.random() < 0.35) {
-      addLog('ALERT', `[CARDIAC] Tachycardia event: ${Math.round(state.heartRate)} bpm`);
+      addSessionLog(session, 'ALERT', `[CARDIAC] Tachycardia event: ${Math.round(state.heartRate)} bpm`);
     }
   } else {
     // Safe Mode: Homeostasis Jitter & System Recovery
@@ -500,7 +594,7 @@ setInterval(() => {
 
     // Subsystem status
     subsystems: state.subsystems,
-    logs: localLogs,
+    logs: session.logs,
 
     // True track-specific nested payload structure
     trackData: {
@@ -542,80 +636,233 @@ setInterval(() => {
 
   const payloadStr = JSON.stringify(payload);
 
-  // Broadcast to all dashboard clients
+  // Broadcast to WS clients that belong to this session
   wss.clients.forEach((client) => {
-    if (client.readyState === 1 && client.isDashboard) { // WebSocket.OPEN and is dashboard
+    if (client.readyState === 1 && client.isDashboard && client.sessionId === session.id) {
       client.send(payloadStr);
     }
   });
-}, 1000);
 
-function initiateCrisis() {
-  console.log(`[WS] Crisis initiated for track: ${state.activeTrack}`);
-  state.isCrisisActive = true;
-  addLog('ALERT', `AUTOMATED OVERRIDE TRIGGERED: CRISIS STATE DETECTED.`);
-  
-  const overrideMsg = state.activeTrack === 'ASTRONAUT' ? "AUTOMATED OVERRIDE: INITIATING EMERGENCY SUIT RE-PRESSURIZATION" :
-                      state.activeTrack === 'PILOT' ? "AUTOMATED PILOT OVERRIDE: INITIATING EMERGENCY FLIGHT DESCENT RADIAN" :
-                      state.activeTrack === 'SURGEON' ? "AUTOMATED OVERRIDE: ENGAGING ROBOTIC STABILIZATION DAMPERS" :
-                      state.activeTrack === 'TRAIN_PILOT' ? "AUTOMATED OVERRIDE: ENGAGING EMERGENCY PNEUMATIC BRAKES" :
-                      "FLEET PLATOON WARNING: EXECUTING DISTRIBUTED V2V SHOULDER PULL-OVER";
-  addLog('ALERT', overrideMsg);
-
-  const crisisSequences = {
-    TRAIN_PILOT: [
-      "[PERCLOS] Micro-sleep state detected.",
-      "[BRAKES] Stage 1 pneumatic clamp engaged.",
-      "[OVERRIDE] Manual controls bypassed."
-    ],
-    PILOT: [
-      "[HYPOXIA] SpO2 below 83% threshold.",
-      "[AUTO-GCAS] Control stick locked.",
-      "[CLIMB] Wings-level pull-up initiated."
-    ],
-    ASTRONAUT: [
-      "[SCRUBBER] pCO2 spike detected.",
-      "[O2] Auxiliary valve fired.",
-      "[THRUSTER] Return-to-airlock trajectory calculated."
-    ],
-    SURGEON: [
-      "[TREMOR] 8Hz FFT amplitude critical.",
-      "[STABILIZER] Micro-filter engaged.",
-      "[HOLD] Digital scalpel locked in 3D space."
-    ],
-    TRUCKER: [
-      "[HRV] Parasympathetic override detected.",
-      "[V2V] Platoon gap expansion broadcast.",
-      "[NAV] Shoulder pull-over sequence initiated."
-    ]
-  };
-
-  const seq = crisisSequences[state.activeTrack] || [];
-  seq.forEach((msg, i) => {
-    setTimeout(() => {
-      addLog('ALERT', msg);
-    }, (i + 1) * 500);
+  // SSE broadcast to this session's dashboard clients
+  session.sseClients.forEach((client) => {
+    sendSSE(client, payload);
   });
 }
 
-function resolveCrisis() {
-  console.log(`[WS] Stabilization Protocol Engaged for track: ${state.activeTrack}`);
-  state.isCrisisActive = false;
-  // Apply massive recovery buffers to naturally pull them back to homeostasis over 10 seconds
-  recoveryBuffers.heartRate = (75 - state.heartRate) * 1.5;
-  recoveryBuffers.spO2 = (98.2 - state.spO2) * 1.5;
-  recoveryBuffers.glucose = (100 - state.glucose) * 1.5;
-  recoveryBuffers.respiratoryRate = (16 - state.respiratoryRate) * 1.5;
-  recoveryBuffers.cognitiveLatency = (210 - state.cognitiveLatency) * 1.5;
-  recoveryBuffers.pCO2 = (2.5 - state.pCO2) * 1.5;
-  recoveryBuffers.suitPressure = (4.3 - state.suitPressure) * 1.5;
-  recoveryBuffers.tremorAmplitude = (0.02 - state.tremorAmplitude) * 1.5;
-  recoveryBuffers.eda = (1.8 - state.eda) * 1.5;
-  recoveryBuffers.alertness = (96.0 - state.alertness) * 1.5;
-  recoveryBuffers.perclos = (3.5 - state.perclos) * 1.5;
-  recoveryBuffers.gForce = (1.0 - state.gForce) * 1.5;
-  addLog('OK', `STABILIZATION PROTOCOL ENGAGED. Normalizing vitals.`);
+// ─── SUBSYSTEM COMMAND HANDLER (shared logic) ────────────────────────────────
+
+function handleSubsystemCommand(session, cmd) {
+  const state = session.state;
+  const recoveryBuffers = session.recoveryBuffers;
+  console.log(`[CMD] Subsystem Command Executed: ${cmd} (session: ${session.id})`);
+  // Add to recovery buffers for gradual realistic effect
+  recoveryBuffers.heartRate -= 5;
+  
+  let resolvedSys = '';
+  switch (cmd) {
+    // ASTRONAUT (Env: Suit Pressure)
+    case 'Aero Payload': 
+      recoveryBuffers.suitPressure += 0.5; 
+      state.subsystems.atmosMonitor = 'ONLINE';
+      resolvedSys = 'Atmos Monitor';
+      break;
+    case 'Orbit Calc': 
+      recoveryBuffers.cognitiveLatency -= 25; 
+      state.subsystems.cognitiveProc = 'ONLINE';
+      resolvedSys = 'Cognitive Proc.';
+      break;
+    case 'Nav Systems': 
+      recoveryBuffers.heartRate -= 15; 
+      state.subsystems.telemetryRelay = 'ONLINE';
+      resolvedSys = 'Telemetry Relay';
+      break;
+    case 'Thruster Align': 
+      recoveryBuffers.pCO2 -= 2.0; 
+      recoveryBuffers.suitPressure += 0.2; 
+      state.subsystems.atmosMonitor = 'ONLINE';
+      resolvedSys = 'Atmos Monitor';
+      break;
+    
+    // PILOT (Env: Altitude/environmentMetric)
+    case 'Flaps Config': 
+      recoveryBuffers.gForce -= 1.5; 
+      recoveryBuffers.environmentMetric -= 100; 
+      state.subsystems.atmosMonitor = 'ONLINE';
+      resolvedSys = 'Atmos Monitor';
+      break;
+    case 'Landing Gear': 
+      recoveryBuffers.heartRate -= 20; 
+      recoveryBuffers.environmentMetric -= 200; 
+      state.subsystems.telemetryRelay = 'ONLINE';
+      resolvedSys = 'Telemetry Relay';
+      break;
+    case 'Avionics': 
+      recoveryBuffers.cognitiveLatency -= 30; 
+      recoveryBuffers.environmentMetric -= 50; 
+      state.subsystems.cognitiveProc = 'ONLINE';
+      resolvedSys = 'Cognitive Proc.';
+      break;
+    case 'Radio Comms': 
+      recoveryBuffers.spO2 += 4.0; 
+      state.subsystems.telemetryRelay = 'ONLINE';
+      resolvedSys = 'Telemetry Relay';
+      break;
+    
+    // SURGEON (Env: Hand Tremor Index / tremorAmplitude)
+    case 'Scalpel Sync': 
+      recoveryBuffers.tremorAmplitude -= 0.1; 
+      state.subsystems.neuralInterface = 'ONLINE';
+      resolvedSys = 'Neural Interface';
+      break;
+    case 'Scope Zoom': 
+      recoveryBuffers.eda -= 2.0; 
+      recoveryBuffers.tremorAmplitude -= 0.05; 
+      state.subsystems.biometricSensors = 'ONLINE';
+      resolvedSys = 'Biometric Sensors';
+      break;
+    case 'Hemostat': 
+      recoveryBuffers.heartRate -= 15; 
+      recoveryBuffers.tremorAmplitude -= 0.03; 
+      state.subsystems.telemetryRelay = 'ONLINE';
+      resolvedSys = 'Telemetry Relay';
+      break;
+    case 'Suture Bot': 
+      recoveryBuffers.gripForce += 5.0; 
+      recoveryBuffers.tremorAmplitude -= 0.08; 
+      state.subsystems.neuralInterface = 'ONLINE';
+      resolvedSys = 'Neural Interface';
+      break;
+    
+    // TRAIN_PILOT (Env: Cognitive Latency)
+    case 'Brake Override': 
+      recoveryBuffers.perclos -= 10.0; 
+      recoveryBuffers.cognitiveLatency -= 15; 
+      state.subsystems.neuralInterface = 'ONLINE';
+      resolvedSys = 'Neural Interface';
+      break;
+    case 'Track Switch': 
+      recoveryBuffers.heartRate -= 12; 
+      recoveryBuffers.cognitiveLatency -= 10; 
+      state.subsystems.telemetryRelay = 'ONLINE';
+      resolvedSys = 'Telemetry Relay';
+      break;
+    case 'Horn Signal': 
+      recoveryBuffers.cognitiveLatency -= 30; 
+      state.subsystems.cognitiveProc = 'ONLINE';
+      resolvedSys = 'Cognitive Proc.';
+      break;
+    case 'Door Control': 
+      recoveryBuffers.microCorrections += 10; 
+      recoveryBuffers.cognitiveLatency -= 15; 
+      state.subsystems.biometricSensors = 'ONLINE';
+      resolvedSys = 'Biometric Sensors';
+      break;
+    
+    // TRUCKER (Env: Alertness)
+    case 'Engine Brake': 
+      recoveryBuffers.gripAsymmetry -= 20.0; 
+      recoveryBuffers.alertness += 5; 
+      state.subsystems.atmosMonitor = 'ONLINE';
+      resolvedSys = 'Atmos Monitor';
+      break;
+    case 'Trailer Hitch': 
+      recoveryBuffers.heartRate -= 10; 
+      recoveryBuffers.alertness += 10; 
+      state.subsystems.telemetryRelay = 'ONLINE';
+      resolvedSys = 'Telemetry Relay';
+      break;
+    case 'CB Radio': 
+      recoveryBuffers.alertness += 30; 
+      state.subsystems.cognitiveProc = 'ONLINE';
+      resolvedSys = 'Cognitive Proc.';
+      break;
+    case 'Wiper Fluid': 
+      recoveryBuffers.v2vLink += 15; 
+      recoveryBuffers.alertness += 15; 
+      state.subsystems.biometricSensors = 'ONLINE';
+      resolvedSys = 'Biometric Sensors';
+      break;
+  }
+
+  if (resolvedSys) {
+    addSessionLog(session, 'OK', `[CMD] Resolved ${resolvedSys} instability. Bypassing interlocks.`);
+  }
 }
+
+// ─── DEMO HANDLER (shared logic) ─────────────────────────────────────────────
+
+function startDemo(session) {
+  const state = session.state;
+  const recoveryBuffers = session.recoveryBuffers;
+  console.log(`[Demo] Starting S.P.H.E.R.E. scenario demo (session: ${session.id})`);
+  state.isDemoActive = true;
+  state.demoTime = 0;
+  
+  if (session.demoInterval) clearInterval(session.demoInterval);
+  addSessionLog(session, 'SYS', '--- STARTING S.P.H.E.R.E. SCENARIO DEMO (60s) ---');
+
+  session.demoInterval = setInterval(() => {
+    if (!state.isDemoActive) {
+      clearInterval(session.demoInterval);
+      session.demoInterval = null;
+      return;
+    }
+    state.demoTime++;
+    
+    if (state.demoTime === 1) {
+      addSessionLog(session, 'INFO', '[DEMO] 0-10s: Nominal baseline established on track PILOT. All systems nominal.');
+    } else if (state.demoTime === 10) {
+      addSessionLog(session, 'WARN', '[DEMO] 10-20s: Subtle anomaly drift detected. Rolling Z-Score alarms active.');
+    } else if (state.demoTime === 20) {
+      state.isCrisisActive = true;
+      addSessionLog(session, 'ALERT', '[DEMO] 20-30s: Emergency override thresholds breached. Alarm audio active.');
+      
+      const overrideMsg = "AUTOMATED PILOT OVERRIDE: INITIATING EMERGENCY FLIGHT DESCENT RADIAN";
+      addSessionLog(session, 'ALERT', overrideMsg);
+
+      const seq = [
+        "[HYPOXIA] SpO2 below 83% threshold.",
+        "[AUTO-GCAS] Control stick locked.",
+        "[CLIMB] Wings-level pull-up initiated."
+      ];
+      seq.forEach((msg, i) => {
+        setTimeout(() => {
+          addSessionLog(session, 'ALERT', msg);
+        }, (i + 1) * 500);
+      });
+    } else if (state.demoTime === 30) {
+      addSessionLog(session, 'ALERT', '[DEMO] 30-40s: Autopilot auto-override active. Executing emergency descent.');
+    } else if (state.demoTime === 40) {
+      state.isCrisisActive = false;
+      recoveryBuffers.heartRate = (75 - state.heartRate) * 1.5;
+      recoveryBuffers.spO2 = (98.2 - state.spO2) * 1.5;
+      recoveryBuffers.cognitiveLatency = (210 - state.cognitiveLatency) * 1.5;
+      recoveryBuffers.temperature = (98.6 - state.temperature) * 1.5;
+      recoveryBuffers.pressure = (14.7 - state.pressure) * 1.5;
+      addSessionLog(session, 'OK', '[DEMO] 40-50s: Override successful. Gradual recovery active, vitals normalizing.');
+    } else if (state.demoTime === 50) {
+      addSessionLog(session, 'OK', '[DEMO] 50-60s: All systems nominal. Biometric safety margins restored.');
+    } else if (state.demoTime >= 60) {
+      state.isDemoActive = false;
+      clearInterval(session.demoInterval);
+      session.demoInterval = null;
+      addSessionLog(session, 'SYS', '--- S.P.H.E.R.E. SCENARIO DEMO COMPLETED ---');
+    }
+  }, 1000);
+}
+
+function stopDemo(session) {
+  const state = session.state;
+  console.log(`[Demo] Stopping scenario demo (session: ${session.id})`);
+  state.isDemoActive = false;
+  if (session.demoInterval) {
+    clearInterval(session.demoInterval);
+    session.demoInterval = null;
+  }
+  addSessionLog(session, 'SYS', '[DEMO] Scenario script terminated.');
+}
+
+// ─── KEEPALIVE ───────────────────────────────────────────────────────────────
 
 // Keepalive ping to prevent Cloud Run from closing idle WebSocket connections
 const keepAliveInterval = setInterval(() => {
@@ -626,11 +873,14 @@ const keepAliveInterval = setInterval(() => {
   });
 }, 25000); // Every 25 seconds
 
+// ─── WEBSOCKET CONNECTIONS ───────────────────────────────────────────────────
+
 wss.on('connection', (ws, req) => {
   const reqUrl = req.url || '/';
   const urlObj = new URL(reqUrl, 'http://localhost');
   const pathname = urlObj.pathname.replace(/\/$/, '').toLowerCase();
   const queryMode = urlObj.searchParams.get('mode') || urlObj.searchParams.get('simulation');
+  const querySessionId = urlObj.searchParams.get('session');
   
   // Detect simulation mode (cardiac, respiratory, neurological, or diabetes) from route token or query param
   const simulationMode = (pathname === '/cardiac' || pathname === '/respiratory' || pathname === '/neurological' || pathname === '/diabetes') 
@@ -638,11 +888,17 @@ wss.on('connection', (ws, req) => {
     : (['cardiac', 'respiratory', 'neurological', 'diabetes'].includes(queryMode) ? queryMode : null);
 
   if (simulationMode) {
-    console.log(`[WS] Client connected for high-fidelity simulation: ${simulationMode}`);
+    // Get or create session for this simulation client
+    const session = getOrCreateSession(querySessionId);
+    const state = session.state;
+    ws.sessionId = session.id;
+    session.clientCount++;
+
+    console.log(`[WS] Client connected for high-fidelity simulation: ${simulationMode} (session: ${session.id})`);
     ws.isDashboard = false;
     ws.simulationMode = simulationMode;
 
-    // Auto-sync active track on server to match simulation mode
+    // Auto-sync active track on session to match simulation mode
     const simulationToTrackMap = {
       cardiac: 'PILOT',
       respiratory: 'ASTRONAUT',
@@ -651,8 +907,8 @@ wss.on('connection', (ws, req) => {
     };
     const targetTrack = simulationToTrackMap[simulationMode];
     if (targetTrack && state.activeTrack !== targetTrack) {
-      console.log(`[WS] Auto-switching server activeTrack to ${targetTrack} for simulation: ${simulationMode}`);
-      resetStateToTrack(targetTrack);
+      console.log(`[WS] Auto-switching session activeTrack to ${targetTrack} for simulation: ${simulationMode}`);
+      resetStateToTrack(state, targetTrack, session);
     }
 
     let phase = 0;
@@ -767,9 +1023,9 @@ wss.on('connection', (ws, req) => {
       try {
         const parsed = JSON.parse(message);
         if (parsed.type === 'INITIATE_CRISIS') {
-          initiateCrisis();
+          initiateCrisis(session);
         } else if (parsed.type === 'RESOLVE_CRISIS') {
-          resolveCrisis();
+          resolveCrisis(session);
         }
       } catch (err) {
         console.error('[WS] Failed to parse message on simulation socket:', err);
@@ -777,8 +1033,10 @@ wss.on('connection', (ws, req) => {
     });
 
     ws.on('close', (code, reason) => {
-      console.log(`[WS] Client disconnected from high-fidelity simulation: ${simulationMode} - Code: ${code}, Reason: ${reason ? reason.toString() : 'None'}`);
+      console.log(`[WS] Client disconnected from high-fidelity simulation: ${simulationMode} (session: ${session.id}) - Code: ${code}, Reason: ${reason ? reason.toString() : 'None'}`);
       clearInterval(timer);
+      session.clientCount--;
+      scheduleSessionCleanup(session.id);
     });
 
     ws.on('error', (err) => {
@@ -786,9 +1044,15 @@ wss.on('connection', (ws, req) => {
     });
 
   } else {
-    // Default dashboard client
-    console.log('[WS] Client connected (Dashboard Mode)');
+    // Default dashboard client OR hardware sensor pack
+    // Hardware connections always use 'global' session; dashboard clients use querySessionId
+    const session = getOrCreateSession(querySessionId);
+    const state = session.state;
+    ws.sessionId = session.id;
     ws.isDashboard = true;
+    session.clientCount++;
+
+    console.log(`[WS] Client connected (Dashboard Mode, session: ${session.id})`);
 
     ws.on('message', (message) => {
       try {
@@ -798,255 +1062,67 @@ wss.on('connection', (ws, req) => {
           ws.isDashboard = false;
           ws.isHardware = true;
           
+          // Hardware sensor packs always write to the 'global' session
+          const hwSession = getOrCreateSession('global');
+          const hwState = hwSession.state;
+
           if (typeof parsed.heartRate === 'number' && parsed.heartRate > 0) {
-            state.heartRate = parsed.heartRate;
+            hwState.heartRate = parsed.heartRate;
           }
           if (typeof parsed.spO2 === 'number' && parsed.spO2 > 0) {
-            state.spO2 = parsed.spO2;
+            hwState.spO2 = parsed.spO2;
           }
-          if (state.activeTrack === 'PILOT') {
+          if (hwState.activeTrack === 'PILOT') {
             if (typeof parsed.gForce === 'number') {
-              state.gForce = parsed.gForce;
-              state.environmentMetric = parsed.gForce;
+              hwState.gForce = parsed.gForce;
+              hwState.environmentMetric = parsed.gForce;
             }
           }
-          if (state.activeTrack === 'SURGEON') {
+          if (hwState.activeTrack === 'SURGEON') {
             if (typeof parsed.tremorAmplitude === 'number') {
-              state.tremorAmplitude = parsed.tremorAmplitude;
-              state.environmentMetric = parsed.tremorAmplitude;
+              hwState.tremorAmplitude = parsed.tremorAmplitude;
+              hwState.environmentMetric = parsed.tremorAmplitude;
             }
           }
 
           const now = Date.now();
-          if (!state.lastHardwareLogTime || now - state.lastHardwareLogTime > 5000) {
-            state.lastHardwareLogTime = now;
-            addLog('SYS', `[HW] Biosensor Pack Online. Stream stabilized: HR=${Math.round(state.heartRate)} bpm, SpO2=${state.spO2}%`);
+          if (!hwState.lastHardwareLogTime || now - hwState.lastHardwareLogTime > 5000) {
+            hwState.lastHardwareLogTime = now;
+            addSessionLog(hwSession, 'SYS', `[HW] Biosensor Pack Online. Stream stabilized: HR=${Math.round(hwState.heartRate)} bpm, SpO2=${hwState.spO2}%`);
           }
           return;
         }
         
         if (parsed.type === 'INITIATE_CRISIS') {
-          initiateCrisis();
+          initiateCrisis(session);
         }
         
         if (parsed.type === 'SET_TRACK') {
-          console.log(`[WS] Track changed to: ${parsed.track}`);
+          console.log(`[WS] Track changed to: ${parsed.track} (session: ${session.id})`);
           if (TRACKS[parsed.track]) {
-            resetStateToTrack(parsed.track);
-            addLog('SYS', `[TRACK] Switched to ${parsed.track}. Recalibrating sensors.`);
+            resetStateToTrack(state, parsed.track, session);
+            addSessionLog(session, 'SYS', `[TRACK] Switched to ${parsed.track}. Recalibrating sensors.`);
           }
         }
 
         if (parsed.type === 'RESOLVE_CRISIS') {
-          resolveCrisis();
+          resolveCrisis(session);
         }
 
         if (parsed.type === 'START_DEMO') {
-          console.log('[WS] Starting S.P.H.E.R.E. scenario demo on server...');
-          state.isDemoActive = true;
-          state.demoTime = 0;
-          
-          if (demoInterval) clearInterval(demoInterval);
-          addLog('SYS', '--- STARTING S.P.H.E.R.E. SCENARIO DEMO (60s) ---');
-
-          demoInterval = setInterval(() => {
-            if (!state.isDemoActive) {
-              clearInterval(demoInterval);
-              demoInterval = null;
-              return;
-            }
-            state.demoTime++;
-            
-            if (state.demoTime === 1) {
-              addLog('INFO', '[DEMO] 0-10s: Nominal baseline established on track PILOT. All systems nominal.');
-            } else if (state.demoTime === 10) {
-              addLog('WARN', '[DEMO] 10-20s: Subtle anomaly drift detected. Rolling Z-Score alarms active.');
-            } else if (state.demoTime === 20) {
-              state.isCrisisActive = true;
-              addLog('ALERT', '[DEMO] 20-30s: Emergency override thresholds breached. Alarm audio active.');
-              
-              const overrideMsg = "AUTOMATED PILOT OVERRIDE: INITIATING EMERGENCY FLIGHT DESCENT RADIAN";
-              addLog('ALERT', overrideMsg);
-
-              const seq = [
-                "[HYPOXIA] SpO2 below 83% threshold.",
-                "[AUTO-GCAS] Control stick locked.",
-                "[CLIMB] Wings-level pull-up initiated."
-              ];
-              seq.forEach((msg, i) => {
-                setTimeout(() => {
-                  addLog('ALERT', msg);
-                }, (i + 1) * 500);
-              });
-            } else if (state.demoTime === 30) {
-              addLog('ALERT', '[DEMO] 30-40s: Autopilot auto-override active. Executing emergency descent.');
-            } else if (state.demoTime === 40) {
-              state.isCrisisActive = false;
-              recoveryBuffers.heartRate = (75 - state.heartRate) * 1.5;
-              recoveryBuffers.spO2 = (98.2 - state.spO2) * 1.5;
-              recoveryBuffers.cognitiveLatency = (210 - state.cognitiveLatency) * 1.5;
-              recoveryBuffers.temperature = (98.6 - state.temperature) * 1.5;
-              recoveryBuffers.pressure = (14.7 - state.pressure) * 1.5;
-              addLog('OK', '[DEMO] 40-50s: Override successful. Gradual recovery active, vitals normalizing.');
-            } else if (state.demoTime === 50) {
-              addLog('OK', '[DEMO] 50-60s: All systems nominal. Biometric safety margins restored.');
-            } else if (state.demoTime >= 60) {
-              state.isDemoActive = false;
-              clearInterval(demoInterval);
-              demoInterval = null;
-              addLog('SYS', '--- S.P.H.E.R.E. SCENARIO DEMO COMPLETED ---');
-            }
-          }, 1000);
+          startDemo(session);
         }
 
         if (parsed.type === 'STOP_DEMO') {
-          console.log('[WS] Stopping scenario demo.');
-          state.isDemoActive = false;
-          if (demoInterval) {
-            clearInterval(demoInterval);
-            demoInterval = null;
-          }
-          addLog('SYS', '[DEMO] Scenario script terminated.');
+          stopDemo(session);
         }
 
         if (parsed.type === 'CLEAR_LOGS') {
-          localLogs = [{ id: Date.now(), time: nowTime(), level: 'SYS', msg: 'Logs cleared.' }];
+          session.logs = [{ id: Date.now(), time: nowTime(), level: 'SYS', msg: 'Logs cleared.' }];
         }
 
         if (parsed.type === 'EXECUTE_SUBSYSTEM') {
-          console.log(`[WS] Subsystem Command Executed: ${parsed.cmd}`);
-          // Add to recovery buffers for gradual realistic effect
-          recoveryBuffers.heartRate -= 5;
-          
-          let resolvedSys = '';
-          switch (parsed.cmd) {
-            // ASTRONAUT (Env: Suit Pressure)
-            case 'Aero Payload': 
-              recoveryBuffers.suitPressure += 0.5; 
-              state.subsystems.atmosMonitor = 'ONLINE';
-              resolvedSys = 'Atmos Monitor';
-              break;
-            case 'Orbit Calc': 
-              recoveryBuffers.cognitiveLatency -= 25; 
-              state.subsystems.cognitiveProc = 'ONLINE';
-              resolvedSys = 'Cognitive Proc.';
-              break;
-            case 'Nav Systems': 
-              recoveryBuffers.heartRate -= 15; 
-              state.subsystems.telemetryRelay = 'ONLINE';
-              resolvedSys = 'Telemetry Relay';
-              break;
-            case 'Thruster Align': 
-              recoveryBuffers.pCO2 -= 2.0; 
-              recoveryBuffers.suitPressure += 0.2; 
-              state.subsystems.atmosMonitor = 'ONLINE';
-              resolvedSys = 'Atmos Monitor';
-              break;
-            
-            // PILOT (Env: Altitude/environmentMetric)
-            case 'Flaps Config': 
-              recoveryBuffers.gForce -= 1.5; 
-              recoveryBuffers.environmentMetric -= 100; 
-              state.subsystems.atmosMonitor = 'ONLINE';
-              resolvedSys = 'Atmos Monitor';
-              break;
-            case 'Landing Gear': 
-              recoveryBuffers.heartRate -= 20; 
-              recoveryBuffers.environmentMetric -= 200; 
-              state.subsystems.telemetryRelay = 'ONLINE';
-              resolvedSys = 'Telemetry Relay';
-              break;
-            case 'Avionics': 
-              recoveryBuffers.cognitiveLatency -= 30; 
-              recoveryBuffers.environmentMetric -= 50; 
-              state.subsystems.cognitiveProc = 'ONLINE';
-              resolvedSys = 'Cognitive Proc.';
-              break;
-            case 'Radio Comms': 
-              recoveryBuffers.spO2 += 4.0; 
-              state.subsystems.telemetryRelay = 'ONLINE';
-              resolvedSys = 'Telemetry Relay';
-              break;
-            
-            // SURGEON (Env: Hand Tremor Index / tremorAmplitude)
-            case 'Scalpel Sync': 
-              recoveryBuffers.tremorAmplitude -= 0.1; 
-              state.subsystems.neuralInterface = 'ONLINE';
-              resolvedSys = 'Neural Interface';
-              break;
-            case 'Scope Zoom': 
-              recoveryBuffers.eda -= 2.0; 
-              recoveryBuffers.tremorAmplitude -= 0.05; 
-              state.subsystems.biometricSensors = 'ONLINE';
-              resolvedSys = 'Biometric Sensors';
-              break;
-            case 'Hemostat': 
-              recoveryBuffers.heartRate -= 15; 
-              recoveryBuffers.tremorAmplitude -= 0.03; 
-              state.subsystems.telemetryRelay = 'ONLINE';
-              resolvedSys = 'Telemetry Relay';
-              break;
-            case 'Suture Bot': 
-              recoveryBuffers.gripForce += 5.0; 
-              recoveryBuffers.tremorAmplitude -= 0.08; 
-              state.subsystems.neuralInterface = 'ONLINE';
-              resolvedSys = 'Neural Interface';
-              break;
-            
-            // TRAIN_PILOT (Env: Cognitive Latency)
-            case 'Brake Override': 
-              recoveryBuffers.perclos -= 10.0; 
-              recoveryBuffers.cognitiveLatency -= 15; 
-              state.subsystems.neuralInterface = 'ONLINE';
-              resolvedSys = 'Neural Interface';
-              break;
-            case 'Track Switch': 
-              recoveryBuffers.heartRate -= 12; 
-              recoveryBuffers.cognitiveLatency -= 10; 
-              state.subsystems.telemetryRelay = 'ONLINE';
-              resolvedSys = 'Telemetry Relay';
-              break;
-            case 'Horn Signal': 
-              recoveryBuffers.cognitiveLatency -= 30; 
-              state.subsystems.cognitiveProc = 'ONLINE';
-              resolvedSys = 'Cognitive Proc.';
-              break;
-            case 'Door Control': 
-              recoveryBuffers.microCorrections += 10; 
-              recoveryBuffers.cognitiveLatency -= 15; 
-              state.subsystems.biometricSensors = 'ONLINE';
-              resolvedSys = 'Biometric Sensors';
-              break;
-            
-            // TRUCKER (Env: Alertness)
-            case 'Engine Brake': 
-              recoveryBuffers.gripAsymmetry -= 20.0; 
-              recoveryBuffers.alertness += 5; 
-              state.subsystems.atmosMonitor = 'ONLINE';
-              resolvedSys = 'Atmos Monitor';
-              break;
-            case 'Trailer Hitch': 
-              recoveryBuffers.heartRate -= 10; 
-              recoveryBuffers.alertness += 10; 
-              state.subsystems.telemetryRelay = 'ONLINE';
-              resolvedSys = 'Telemetry Relay';
-              break;
-            case 'CB Radio': 
-              recoveryBuffers.alertness += 30; 
-              state.subsystems.cognitiveProc = 'ONLINE';
-              resolvedSys = 'Cognitive Proc.';
-              break;
-            case 'Wiper Fluid': 
-              recoveryBuffers.v2vLink += 15; 
-              recoveryBuffers.alertness += 15; 
-              state.subsystems.biometricSensors = 'ONLINE';
-              resolvedSys = 'Biometric Sensors';
-              break;
-          }
-
-          if (resolvedSys) {
-            addLog('OK', `[CMD] Resolved ${resolvedSys} instability. Bypassing interlocks.`);
-          }
+          handleSubsystemCommand(session, parsed.cmd);
         }
       } catch (err) {
         console.error('[WS] Error parsing message:', err);
@@ -1054,7 +1130,9 @@ wss.on('connection', (ws, req) => {
     });
 
     ws.on('close', (code, reason) => {
-      console.log(`[WS] Client disconnected (Dashboard Mode) - Code: ${code}, Reason: ${reason ? reason.toString() : 'None'}`);
+      console.log(`[WS] Client disconnected (Dashboard Mode, session: ${session.id}) - Code: ${code}, Reason: ${reason ? reason.toString() : 'None'}`);
+      session.clientCount--;
+      scheduleSessionCleanup(session.id);
     });
 
     ws.on('error', (err) => {
@@ -1063,8 +1141,226 @@ wss.on('connection', (ws, req) => {
   }
 });
 
+// ─── SSE ENDPOINTS ───────────────────────────────────────────────────────────
+
+// Dashboard SSE stream (1Hz) — replaces WebSocket dashboard broadcast
+app.get('/api/stream/dashboard', (req, res) => {
+  const sessionId = req.query.session || null;
+  const session = getOrCreateSession(sessionId);
+  session.clientCount++;
+
+  // Disable request timeout for long-lived SSE connections
+  req.setTimeout(0);
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'Transfer-Encoding': 'chunked',
+    'X-Accel-Buffering': 'no',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.flushHeaders(); // Force-flush headers immediately (critical for Cloud Run GFE)
+  res.write(':ok\n\n'); // SSE comment to confirm stream is alive
+
+  // Keepalive: send SSE comment every 15s to prevent Cloud Run idle timeout
+  const keepalive = setInterval(() => {
+    if (!res.writableEnded) {
+      res.write(':keepalive\n\n');
+    }
+  }, 15000);
+
+  session.sseClients.add(res);
+  console.log(`[SSE] Dashboard client connected (session: ${session.id}). Total SSE clients: ${session.sseClients.size}`);
+
+  req.on('close', () => {
+    clearInterval(keepalive);
+    session.sseClients.delete(res);
+    session.clientCount--;
+    console.log(`[SSE] Dashboard client disconnected (session: ${session.id}). Total SSE clients: ${session.sseClients.size}`);
+    scheduleSessionCleanup(session.id);
+  });
+});
+
+// High-fidelity simulation SSE stream (60Hz)
+app.get('/api/stream/:mode', (req, res) => {
+  const mode = req.params.mode;
+  if (!['cardiac', 'respiratory', 'neurological', 'diabetes'].includes(mode)) {
+    return res.status(404).json({ error: 'Unknown simulation mode' });
+  }
+
+  const sessionId = req.query.session || null;
+  const session = getOrCreateSession(sessionId);
+  const state = session.state;
+  session.clientCount++;
+
+  // Disable request timeout for long-lived SSE connections
+  req.setTimeout(0);
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'Transfer-Encoding': 'chunked',
+    'X-Accel-Buffering': 'no',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.flushHeaders(); // Force-flush headers immediately (critical for Cloud Run GFE)
+  res.write(':ok\n\n');
+
+  // Auto-sync track
+  const simulationToTrackMap = {
+    cardiac: 'PILOT',
+    respiratory: 'ASTRONAUT',
+    neurological: 'SURGEON',
+    diabetes: 'TRAIN_PILOT'
+  };
+  const targetTrack = simulationToTrackMap[mode];
+  if (targetTrack && state.activeTrack !== targetTrack) {
+    console.log(`[SSE] Auto-switching session activeTrack to ${targetTrack} for simulation: ${mode} (session: ${session.id})`);
+    resetStateToTrack(state, targetTrack, session);
+  }
+
+  let phase = 0;
+  let lastTime = Date.now();
+
+  const timer = setInterval(() => {
+    if (res.writableEnded) {
+      clearInterval(timer);
+      return;
+    }
+
+    const now = Date.now();
+    const dt = now - lastTime;
+    lastTime = now;
+
+    let payload = null;
+
+    if (mode === 'cardiac') {
+      const bpm = state.heartRate;
+      const beatInterval = 60000 / bpm;
+      phase = (phase + dt / beatInterval) % 1.0;
+      const amplitude = getECGValue(phase) + (Math.random() - 0.5) * (state.isCrisisActive ? 0.1 : 0.03);
+      const rPeakDetected = phase >= 0.145 && phase < 0.165;
+      payload = {
+        type: 'cardiac',
+        timestamp: now,
+        bpm: parseFloat(bpm.toFixed(1)),
+        amplitude: parseFloat(amplitude.toFixed(4)),
+        oxygenSaturation: parseFloat(state.spO2.toFixed(2)),
+        glucose: parseFloat(state.glucose.toFixed(1)),
+        respiratoryRate: parseFloat(state.respiratoryRate.toFixed(1)),
+        rPeakDetected,
+        isCrisisActive: state.isCrisisActive
+      };
+    } else if (mode === 'respiratory') {
+      const respRate = state.respiratoryRate;
+      const period = 60000 / respRate;
+      phase = (phase + dt / period) % 1.0;
+      const lungCapacity = 2.5 + Math.sin(phase * Math.PI * 2) * (state.isCrisisActive ? 0.8 : 1.2) + (Math.random() - 0.5) * 0.04;
+      payload = {
+        type: 'respiratory',
+        timestamp: now,
+        bpm: parseFloat(state.heartRate.toFixed(1)),
+        respiratoryRate: parseFloat(respRate.toFixed(1)),
+        lungCapacity: parseFloat(lungCapacity.toFixed(4)),
+        oxygenSaturation: parseFloat(state.spO2.toFixed(2)),
+        glucose: parseFloat(state.glucose.toFixed(1)),
+        isCrisisActive: state.isCrisisActive
+      };
+    } else if (mode === 'neurological') {
+      const seizureActive = state.isCrisisActive;
+      const brainwaveFrequency = seizureActive
+        ? 58 + Math.sin(now / 3000) * 10 + (Math.random() - 0.5) * 6
+        : 12 + Math.sin(now / 4000) * 2 + (Math.random() - 0.5) * 1.5;
+      const eegArray = Array.from({ length: 8 }, () => {
+        const base = Math.sin(now * 0.08) * 0.4 + Math.cos(now * 0.22) * 0.3;
+        const noise = (Math.random() - 0.5) * (seizureActive ? 1.5 : 0.2);
+        return parseFloat((base + noise).toFixed(4));
+      });
+      payload = {
+        type: 'neurological',
+        timestamp: now,
+        bpm: parseFloat(state.heartRate.toFixed(1)),
+        brainwaveFrequency: parseFloat(brainwaveFrequency.toFixed(1)),
+        eegArray,
+        oxygenSaturation: parseFloat(state.spO2.toFixed(2)),
+        glucose: parseFloat(state.glucose.toFixed(1)),
+        respiratoryRate: parseFloat(state.respiratoryRate.toFixed(1)),
+        seizureActive,
+        isCrisisActive: state.isCrisisActive
+      };
+    } else if (mode === 'diabetes') {
+      payload = {
+        type: 'diabetes',
+        timestamp: now,
+        bpm: parseFloat(state.heartRate.toFixed(1)),
+        oxygenSaturation: parseFloat(state.spO2.toFixed(2)),
+        glucose: parseFloat(state.glucose.toFixed(1)),
+        respiratoryRate: parseFloat(state.respiratoryRate.toFixed(1)),
+        isCrisisActive: state.isCrisisActive
+      };
+    }
+
+    if (payload) {
+      sendSSE(res, payload);
+    }
+  }, 16);
+
+  simulationSSEClients.set(res, { mode, timer });
+  console.log(`[SSE] Simulation client connected: ${mode} (session: ${session.id}). Total: ${simulationSSEClients.size}`);
+
+  req.on('close', () => {
+    clearInterval(timer);
+    simulationSSEClients.delete(res);
+    session.clientCount--;
+    console.log(`[SSE] Simulation client disconnected: ${mode} (session: ${session.id}). Total: ${simulationSSEClients.size}`);
+    scheduleSessionCleanup(session.id);
+  });
+});
+
+// Command POST endpoint — replaces WebSocket client→server messages
+app.use(express.json());
+app.post('/api/command', (req, res) => {
+  const { type, track, cmd, sessionId } = req.body;
+  const session = getOrCreateSession(sessionId);
+  const state = session.state;
+  const recoveryBuffers = session.recoveryBuffers;
+  console.log(`[SSE-CMD] Received command: ${type} (session: ${session.id})`);
+
+  switch (type) {
+    case 'INITIATE_CRISIS':
+      initiateCrisis(session);
+      break;
+    case 'RESOLVE_CRISIS':
+      resolveCrisis(session);
+      break;
+    case 'SET_TRACK':
+      if (TRACKS[track]) {
+        resetStateToTrack(state, track, session);
+        addSessionLog(session, 'SYS', `[TRACK] Switched to ${track}. Recalibrating sensors.`);
+      }
+      break;
+    case 'EXECUTE_SUBSYSTEM':
+      handleSubsystemCommand(session, cmd);
+      break;
+    case 'START_DEMO':
+      startDemo(session);
+      break;
+    case 'STOP_DEMO':
+      stopDemo(session);
+      break;
+    case 'CLEAR_LOGS':
+      session.logs = [{ id: Date.now(), time: nowTime(), level: 'SYS', msg: 'Logs cleared.' }];
+      break;
+  }
+
+  res.json({ ok: true });
+});
+
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', track: state.activeTrack, crisis: state.isCrisisActive });
+  const sessionId = req.query.session || 'global';
+  const session = sessions.get(sessionId);
+  const state = session ? session.state : { activeTrack: 'PILOT', isCrisisActive: false };
+  res.json({ status: 'ok', track: state.activeTrack, crisis: state.isCrisisActive, activeSessions: sessions.size });
 });
 
 // Manual WebSocket upgrade handler — ensures WS connections work

@@ -35,7 +35,7 @@ export interface TelemetryStoreState {
   wireframeMode: 'wireframe' | 'dots' | 'solid'
 
   // --- Actions ---
-  connectToTelemetry: (websocketUrl: string) => void
+  connectToTelemetry: (streamUrl: string) => void
   disconnectFromTelemetry: () => void
   setActiveUserProfile: (profile: string) => void
   setCurrentCondition: (condition: ConditionType) => void
@@ -52,11 +52,49 @@ export interface TelemetryStoreState {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Resilient Global Telemetry Zustand Store
+// Helper: Send command to server via HTTP POST
 // ─────────────────────────────────────────────────────────────────────────────
 
-let socketInstance: WebSocket | null = null
-let reconnectTimeoutId: NodeJS.Timeout | null = null
+// Session ID — shared with useTelemetry.ts via sessionStorage
+function getSessionId(): string {
+  if (typeof window === 'undefined') return 'server'
+  let id = sessionStorage.getItem('sphere_session_id')
+  if (!id) {
+    id = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    sessionStorage.setItem('sphere_session_id', id)
+  }
+  return id
+}
+
+function getCommandUrl(): string {
+  if (typeof window === 'undefined') return 'http://localhost:8080/api/command'
+  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  if (isLocal) {
+    const port = process.env.NEXT_PUBLIC_WS_PORT || '8080'
+    return `${window.location.protocol}//${window.location.hostname}:${port}/api/command`
+  }
+  return `${window.location.protocol}//${window.location.host}/api/command`
+}
+
+async function sendCommand(body: Record<string, unknown>): Promise<void> {
+  try {
+    await fetch(getCommandUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, sessionId: getSessionId() }),
+    })
+  } catch (err) {
+    console.error('[TelemetryStore] Failed to send command:', err)
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Resilient Global Telemetry Zustand Store (SSE-based)
+// ─────────────────────────────────────────────────────────────────────────────
+
+let eventSourceInstance: EventSource | null = null
 
 export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
   // --- Initial States ---
@@ -115,86 +153,64 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
         ...frame
       }
     })),
+
+  // --- Command Actions (HTTP POST instead of WebSocket send) ---
   triggerCrisis: () => {
-    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
-      socketInstance.send(JSON.stringify({ type: 'INITIATE_CRISIS' }))
-    }
+    sendCommand({ type: 'INITIATE_CRISIS' })
   },
   resolveCrisis: () => {
-    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
-      socketInstance.send(JSON.stringify({ type: 'RESOLVE_CRISIS' }))
-    }
+    sendCommand({ type: 'RESOLVE_CRISIS' })
   },
   startDemo: () => {
-    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
-      socketInstance.send(JSON.stringify({ type: 'START_DEMO' }))
-    }
+    sendCommand({ type: 'START_DEMO' })
   },
   stopDemo: () => {
-    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
-      socketInstance.send(JSON.stringify({ type: 'STOP_DEMO' }))
-    }
+    sendCommand({ type: 'STOP_DEMO' })
   },
 
-  // --- Connection Actions ---
-  connectToTelemetry: (websocketUrl) => {
-    // 1. Avoid duplicate socket connections
-    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
-      console.log('[TelemetryStore] WebSocket already active. Skipping connection attempt.')
+  // --- Connection Actions (SSE EventSource) ---
+  connectToTelemetry: (streamUrl) => {
+    // 1. Avoid duplicate connections
+    if (eventSourceInstance && eventSourceInstance.readyState !== EventSource.CLOSED) {
+      console.log('[TelemetryStore] SSE stream already active. Skipping connection attempt.')
       return
     }
 
-    // Clear any pending reconnect timers
-    if (reconnectTimeoutId) {
-      clearTimeout(reconnectTimeoutId)
-      reconnectTimeoutId = null
-    }
-
-    // Clean up any existing socket's event listeners before starting a new one
-    // to prevent race conditions during unmount/remount cycles.
-    if (socketInstance) {
-      console.log('[TelemetryStore] Cleaning up event listeners of previous socket instance.')
-      socketInstance.onopen = null
-      socketInstance.onmessage = null
-      socketInstance.onclose = null
-      socketInstance.onerror = null
-      if (socketInstance.readyState !== WebSocket.CLOSED) {
-        socketInstance.close()
-      }
-      socketInstance = null
+    // Clean up any existing instance
+    if (eventSourceInstance) {
+      console.log('[TelemetryStore] Cleaning up previous EventSource instance.')
+      eventSourceInstance.close()
+      eventSourceInstance = null
     }
 
     set({ websocketStatus: 'connecting' })
-    console.log(`[TelemetryStore] Spawning connection to: ${websocketUrl}`)
+    // Append session ID so simulation streams share the same session as dashboard
+    const separator = streamUrl.includes('?') ? '&' : '?'
+    const fullUrl = `${streamUrl}${separator}session=${getSessionId()}`
+    console.log(`[TelemetryStore] Spawning SSE connection to: ${fullUrl}`)
 
     try {
-      const ws = new WebSocket(websocketUrl)
-      socketInstance = ws
+      const es = new EventSource(fullUrl)
+      eventSourceInstance = es
 
-      ws.onopen = () => {
-        // Enforce active socket check to block race conditions
-        if (socketInstance !== ws) {
-          console.warn('[TelemetryStore] Handshake onopen event ignored from orphaned socket.')
+      es.onopen = () => {
+        // Enforce active instance check to block race conditions
+        if (eventSourceInstance !== es) {
+          console.warn('[TelemetryStore] onopen event ignored from orphaned EventSource.')
           return
         }
-        console.log('[TelemetryStore] Neural socket handshake established.')
+        console.log('[TelemetryStore] Neural SSE stream established.')
         set({ 
           websocketStatus: 'connected', 
           reconnectAttempts: 0 
         })
       }
 
-      ws.onmessage = (event) => {
-        // Enforce active socket check
-        if (socketInstance !== ws) return
+      es.onmessage = (event) => {
+        // Enforce active instance check
+        if (eventSourceInstance !== es) return
 
         try {
-          // Ingestion boundaries protection: ensure the payload is safely formatted JSON
-          if (typeof event.data !== 'string') {
-            console.warn('[TelemetryStore] Invalid binary payload discarded.')
-            return
-          }
-
           const payload = JSON.parse(event.data)
 
           // Defensive parsing block: mapping streamed keys safely with default fallbacks
@@ -235,73 +251,40 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
             }
           })
         } catch (parseErr) {
-          console.error('[TelemetryStore] Failed to ingest message packet:', parseErr)
+          console.error('[TelemetryStore] Failed to ingest SSE message packet:', parseErr)
         }
       }
 
-      ws.onclose = (event) => {
-        // Enforce active socket check
-        if (socketInstance !== ws) {
-          console.log('[TelemetryStore] onclose event ignored from orphaned socket.')
-          return
-        }
+      es.onerror = () => {
+        // Enforce active instance check
+        if (eventSourceInstance !== es) return
 
-        socketInstance = null
-        if (get().websocketStatus === 'disconnected') {
-          // Graceful voluntary disconnect
-          console.log('[TelemetryStore] WebSocket connection closed by user.')
-          return
-        }
-
-        console.warn(`[TelemetryStore] WebSocket disconnected. Code: ${event.code}. Reconnecting...`)
-        set({ websocketStatus: 'disconnected' })
-        
-        // Auto-reconnect trigger: exponential backoff logic (max out backoff interval at 30 seconds)
+        // EventSource has native auto-reconnect built in.
+        // The browser will automatically retry after a brief delay.
+        // We just update the UI status to reflect the transient disconnect.
+        console.warn('[TelemetryStore] SSE stream error — browser will auto-reconnect')
         const attempts = get().reconnectAttempts
-        const nextDelay = Math.min(1000 * Math.pow(2, attempts), 30000)
-        
         set({ 
           websocketStatus: 'reconnecting', 
           reconnectAttempts: attempts + 1 
         })
-
-        reconnectTimeoutId = setTimeout(() => {
-          get().connectToTelemetry(websocketUrl)
-        }, nextDelay)
-      }
-
-      ws.onerror = (error) => {
-        if (socketInstance !== ws) return
-        console.warn('[TelemetryStore] WebSocket connection handshake or network layer event:', error)
       }
 
     } catch (err) {
-      console.error('[TelemetryStore] Failed to instantiate WebSocket constructor:', err)
+      console.error('[TelemetryStore] Failed to instantiate EventSource:', err)
       set({ websocketStatus: 'disconnected' })
     }
   },
 
   disconnectFromTelemetry: () => {
-    console.log('[TelemetryStore] Terminating socket connection gracefully.')
+    console.log('[TelemetryStore] Terminating SSE stream gracefully.')
     
     // Set status to disconnected BEFORE closing to prevent trigger of reconnect loop
     set({ websocketStatus: 'disconnected', reconnectAttempts: 0 })
 
-    if (reconnectTimeoutId) {
-      clearTimeout(reconnectTimeoutId)
-      reconnectTimeoutId = null
-    }
-
-    if (socketInstance) {
-      // Nullify listeners to prevent events from triggering on close
-      socketInstance.onopen = null
-      socketInstance.onmessage = null
-      socketInstance.onclose = null
-      socketInstance.onerror = null
-      if (socketInstance.readyState !== WebSocket.CLOSED) {
-        socketInstance.close()
-      }
-      socketInstance = null
+    if (eventSourceInstance) {
+      eventSourceInstance.close()
+      eventSourceInstance = null
     }
   }
 }))

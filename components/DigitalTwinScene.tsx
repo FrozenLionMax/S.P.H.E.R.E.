@@ -1342,22 +1342,22 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
       }
       const endpoint = conditionEndpointMap[currentCondition] || 'diabetes'
       
-      let wsUrl = '';
+      // Build SSE stream URL (regular HTTP — no WebSocket upgrade needed)
+      let streamUrl = '';
       if (typeof window !== 'undefined') {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         if (isLocal) {
           const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
-          wsUrl = `${protocol}//${window.location.hostname}:${port}/${endpoint}?t=${Date.now()}`;
+          streamUrl = `${window.location.protocol}//${window.location.hostname}:${port}/api/stream/${endpoint}`;
         } else {
-          wsUrl = `${protocol}//${window.location.host}/${endpoint}?t=${Date.now()}`;
+          streamUrl = `${window.location.protocol}//${window.location.host}/api/stream/${endpoint}`;
         }
       } else {
-        wsUrl = `ws://localhost:8080/${endpoint}?t=${Date.now()}`;
+        streamUrl = `http://localhost:8080/api/stream/${endpoint}`;
       }
 
       useTelemetryStore.getState().disconnectFromTelemetry()
-      useTelemetryStore.getState().connectToTelemetry(wsUrl)
+      useTelemetryStore.getState().connectToTelemetry(streamUrl)
       return () => {
         useTelemetryStore.getState().disconnectFromTelemetry()
       }
