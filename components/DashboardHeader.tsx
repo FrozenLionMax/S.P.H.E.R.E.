@@ -64,7 +64,7 @@ export default function DashboardHeader({
             setIsOnboarded(false);
             router.push('/');
           }}
-          className="flex items-center gap-2.5 shrink-0 cursor-pointer text-left group transition-all hover:opacity-90"
+          className="flex items-center gap-2.5 shrink-0 cursor-pointer text-left group transition-all hover:opacity-90 animate-fade-in"
           title="Return to Operator Selection"
           aria-label="Return to Operator Selection Selection Screen"
         >
@@ -83,6 +83,34 @@ export default function DashboardHeader({
             </span>
           </div>
         </button>
+
+        {/* Divider */}
+        <div style={{ width: 1, height: 26, background: 'rgba(255,255,255,0.08)' }} className="shrink-0 hidden sm:block" />
+
+        {/* Patient Twin HUD Metadata */}
+        <div className="hidden xl:flex items-center gap-4 text-[7.5px] font-mono leading-[1.3] tracking-widest text-slate-500 uppercase shrink-0">
+          <div className="flex flex-col border-r border-white/5 pr-4 shrink-0">
+            <span className="text-emerald-400 font-bold text-[8px] leading-none mb-0.5">TWIN</span>
+            <span className="text-slate-300">PATIENT ID: TWIN-988</span>
+            <span className="text-red-400/80 font-semibold animate-pulse text-[6.5px]">CLASSIFIED SUBJECT</span>
+          </div>
+          <div className="flex flex-col shrink-0">
+            <div>
+              <span className="text-slate-500">AGE / SEX:</span> <span className="text-slate-300">32 / MALE</span>
+            </div>
+            <div>
+              <span className="text-slate-500">BLOOD TYPE:</span> <span className="text-slate-300">0-NEGATIVE</span>
+            </div>
+          </div>
+          <div className="flex flex-col shrink-0">
+            <div>
+              <span className="text-slate-500">HEIGHT / WT:</span> <span className="text-slate-300">182cm / 76kg</span>
+            </div>
+            <div>
+              <span className="text-slate-500">CORE TEMP:</span> <span className="text-slate-300">98.6°F / 37°C</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Right Side Controls */}
@@ -131,7 +159,7 @@ export default function DashboardHeader({
 
         {/* Audio Controls */}
         <div className="flex items-center gap-2 px-2.5 py-1 rounded-sm border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
-          <span className="text-[8px] font-mono uppercase" style={{ color: audioEnabled ? C.green : C.muted }}>SYS.AUDIO</span>
+          <span className="text-[8px] font-mono uppercase hidden sm:inline" style={{ color: audioEnabled ? C.green : C.muted }}>SYS.AUDIO</span>
           <button
             onClick={() => setAudioEnabled(!audioEnabled)}
             className="w-6 h-3 rounded-sm border flex items-center px-0.5 transition-colors shrink-0"
@@ -158,7 +186,7 @@ export default function DashboardHeader({
               step="0.05"
               value={volume}
               onChange={(e) => setVolume(parseFloat(e.target.value))}
-              className="ml-1 shrink-0 cursor-pointer"
+              className="ml-1 shrink-0 cursor-pointer hidden lg:block"
               style={{
                 width: '36px',
                 height: '3px',
@@ -173,12 +201,12 @@ export default function DashboardHeader({
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm border hidden md:flex" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
+        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-sm border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
           <SignalBars strength={connected ? 5 : 0} />
           <span className="text-[8px] font-mono uppercase" style={{ color: C.muted }}>WS-LINK</span>
         </div>
 
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
+        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-sm border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
           <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: healthScore > 75 ? C.green : healthScore > 50 ? C.amber : C.red }} />
           <span className="text-[8px] font-mono tabular-nums whitespace-nowrap" style={{ color: C.muted }}>
             HLT <span className="font-semibold" style={{ color: healthScore > 75 ? C.green : C.amber }}>{healthScore.toFixed(2)}%</span>
@@ -227,7 +255,7 @@ export default function DashboardHeader({
 
         <button
           onClick={() => setShowShortcuts(true)}
-          className="flex items-center justify-center w-7 h-7 rounded-sm border hover:border-white/20 transition-all cursor-pointer shrink-0"
+          className="hidden sm:flex items-center justify-center w-7 h-7 rounded-sm border hover:border-white/20 transition-all cursor-pointer shrink-0"
           style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: C.muted }}
           title="Keyboard Shortcuts (Key: ?)"
           aria-label="Show keyboard shortcuts help dialog"
@@ -235,7 +263,7 @@ export default function DashboardHeader({
           <span className="text-xs font-mono font-bold">?</span>
         </button>
 
-        <div className="px-2 py-1 rounded-sm text-[9px] font-mono tabular-nums tracking-widest border shrink-0" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: C.muted }}>
+        <div className="hidden sm:block px-2 py-1 rounded-sm text-[9px] font-mono tabular-nums tracking-widest border shrink-0" style={{ background: 'var(--panel)', borderColor: 'var(--border)', color: C.muted }}>
           {clock}
         </div>
       </div>

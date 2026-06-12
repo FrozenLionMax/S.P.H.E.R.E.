@@ -793,12 +793,7 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
     const liveBpm = telemetry.liveTelemetryFrame.bpm
     const liveOxygen = telemetry.liveTelemetryFrame.oxygenSaturation
     const liveBrainFreq = telemetry.liveTelemetryFrame.brainwaveFrequency
-
-    // Hardcode all organ highlights and simulations to run concurrently under systemic stress
-    const isCardiac = true
-    const isRespiratory = true
-    const isNeurological = true
-    const isDiabetes = true
+    const isCrisisActive = telemetry.liveTelemetryFrame.isCrisisActive
 
     // Target values for opacity and emissive glowing animation
     const selectedOrgan = telemetry.selectedOrgan
@@ -827,7 +822,23 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
     let heartEmissive = 1.2
     let liverEmissive = 1.2
 
-    // Use pre-allocated colors (no per-frame allocation)
+    // Dynamic warning flash color calculations
+    const flashFactor = Math.sin(elapsed * 12) > 0 ? 1 : 0
+    const targetBrainColor = (isCrisisActive && telemetry.currentCondition === 'epilepsy')
+      ? (flashFactor ? new THREE.Color('#ff0033') : new THREE.Color('#c040ff'))
+      : new THREE.Color('#c040ff')
+
+    const targetLungColor = (isCrisisActive && telemetry.currentCondition === 'asthma')
+      ? (flashFactor ? new THREE.Color('#ff0033') : new THREE.Color('#00ccff'))
+      : new THREE.Color('#00ccff')
+
+    const targetHeartColor = (isCrisisActive && telemetry.currentCondition === 'arrhythmia')
+      ? (flashFactor ? new THREE.Color('#ff0033') : new THREE.Color('#ff2b56'))
+      : new THREE.Color('#ff2b56')
+
+    const targetLiverColor = (isCrisisActive && telemetry.currentCondition === 'diabetes')
+      ? (flashFactor ? new THREE.Color('#ff0033') : new THREE.Color('#ff9900'))
+      : new THREE.Color('#ff9900')
 
     // 1. Heart Pulse Animation
     let heartScale = 1.0
@@ -837,15 +848,15 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
 
     // Rapid irregular heartbeat animation
     if (phase < 0.12) {
-      heartScale = 1.0 + Math.sin((phase / 0.12) * Math.PI) * 0.22
-      heartEmissive = 2.8
+      heartScale = 1.0 + Math.sin((phase / 0.12) * Math.PI) * (isCrisisActive ? 0.32 : 0.22)
+      heartEmissive = isCrisisActive ? 4.0 : 2.8
     } else if (phase >= 0.12 && phase < 0.4) {
       const t = (phase - 0.12) / 0.28
-      heartScale = 1.0 + Math.cos((t * Math.PI) / 2) * 0.22
-      heartEmissive = 0.5 + Math.cos((t * Math.PI) / 2) * 2.0
+      heartScale = 1.0 + Math.cos((t * Math.PI) / 2) * (isCrisisActive ? 0.32 : 0.22)
+      heartEmissive = 0.5 + Math.cos((t * Math.PI) / 2) * (isCrisisActive ? 3.5 : 2.0)
     } else {
       heartScale = 1.0
-      heartEmissive = 0.3
+      heartEmissive = isCrisisActive ? 1.0 : 0.3
     }
     // Subtle deterministic jitter tied to elapsed time — smooth, not random
     heartScale += Math.sin(elapsed * 47.3) * 0.008
@@ -858,40 +869,40 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
     const respRate = 12 + (100 - liveOxygen) * 0.8
     const breathDuration = 60 / respRate
     const respPhase = ((elapsed / breathDuration) * Math.PI * 2)
-    const breathingFactor = Math.sin(respPhase)
+    const breathingFactor = Math.sin(respPhase) * (isCrisisActive ? 1.4 : 1.0)
 
-    lungEmissive = 0.25 + (breathingFactor > 0 ? breathingFactor * 1.6 : 0)
+    lungEmissive = 0.25 + (breathingFactor > 0 ? breathingFactor * (isCrisisActive ? 2.5 : 1.6) : 0)
 
     // 3. Brain Synaptic Spin — smooth noise via lerp accumulator, delta-time rotations
     let brainScale = 1.0
     if (brainMeshRef.current) {
-      brainMeshRef.current.rotation.y += delta * liveBrainFreq * 0.22  // delta-based
+      brainMeshRef.current.rotation.y += delta * liveBrainFreq * (isCrisisActive ? 0.6 : 0.22)  // delta-based
       // Smooth jitter: lerp toward a slowly wandering target instead of raw Math.random
-      const jitterTarget = 1.0 + Math.sin(elapsed * 3.7) * 0.02 * (liveBrainFreq / 15)
+      const jitterTarget = 1.0 + Math.sin(elapsed * (isCrisisActive ? 18 : 3.7)) * (isCrisisActive ? 0.08 : 0.02) * (liveBrainFreq / 15)
       brainJitter.current = THREE.MathUtils.lerp(brainJitter.current, jitterTarget, 0.12)
       brainScale = brainJitter.current
       // Smooth emissive flicker
-      const flickerTarget = 0.4 + Math.abs(Math.sin(elapsed * 4.1)) * 1.6
+      const flickerTarget = (isCrisisActive ? 1.0 : 0.4) + Math.abs(Math.sin(elapsed * (isCrisisActive ? 12 : 4.1))) * (isCrisisActive ? 3.0 : 1.6)
       brainEmissive = THREE.MathUtils.lerp(brainEmissive, flickerTarget, 0.15)
       brainMeshRef.current.scale.set(brainScale, brainScale, brainScale)
     }
     if (brainRing1Ref.current) {
-      brainRing1Ref.current.rotation.z -= delta * 0.9
-      brainRing1Ref.current.rotation.x  = Math.sin(elapsed * 0.5) * 0.15
+      brainRing1Ref.current.rotation.z -= delta * (isCrisisActive ? 2.5 : 0.9)
+      brainRing1Ref.current.rotation.x  = Math.sin(elapsed * 0.5) * (isCrisisActive ? 0.4 : 0.15)
     }
     if (brainRing2Ref.current) {
-      brainRing2Ref.current.rotation.z += delta * 1.5
-      brainRing2Ref.current.rotation.y  = Math.cos(elapsed * 0.4) * 0.12
+      brainRing2Ref.current.rotation.z += delta * (isCrisisActive ? 3.5 : 1.5)
+      brainRing2Ref.current.rotation.y  = Math.cos(elapsed * 0.4) * (isCrisisActive ? 0.35 : 0.12)
     }
     if (brainRing3Ref.current) {
-      brainRing3Ref.current.rotation.x += delta * 0.6
-      brainRing3Ref.current.rotation.y -= delta * 0.9
+      brainRing3Ref.current.rotation.x += delta * (isCrisisActive ? 2.0 : 0.6)
+      brainRing3Ref.current.rotation.y -= delta * (isCrisisActive ? 2.5 : 0.9)
     }
 
     // 4. Liver Metabolic Glow modulated by live glucose
     const liveGlucose = telemetry.liveTelemetryFrame.glucose || 95
-    const liverScale = 1.0 + Math.sin(elapsed * 2.2) * 0.02 * (liveGlucose / 120)
-    liverEmissive = 0.6 + Math.sin(elapsed * 4.5) * 0.3 * (liveGlucose / 100)
+    const liverScale = 1.0 + Math.sin(elapsed * (isCrisisActive ? 6.0 : 2.2)) * (isCrisisActive ? 0.06 : 0.02) * (liveGlucose / 120)
+    liverEmissive = (isCrisisActive ? 1.2 : 0.6) + Math.sin(elapsed * 4.5) * 0.3 * (liveGlucose / 100)
     if (liverMeshRef.current) {
       liverMeshRef.current.scale.set(liverScale, liverScale, liverScale)
     }
@@ -953,26 +964,26 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
     if (brainMatRef.current) {
       brainMatRef.current.opacity          = THREE.MathUtils.lerp(brainMatRef.current.opacity, targetBrainOpacity, lerpA)
       brainMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(brainMatRef.current.emissiveIntensity, brainEmissive, lerpA)
-      brainMatRef.current.color.lerp(brainColor.current, lerpA)
-      brainMatRef.current.emissive.lerp(brainColor.current, lerpA)
+      brainMatRef.current.color.lerp(targetBrainColor, lerpA)
+      brainMatRef.current.emissive.lerp(targetBrainColor, lerpA)
     }
     if (lungMatRef.current) {
       lungMatRef.current.opacity          = THREE.MathUtils.lerp(lungMatRef.current.opacity, targetLungOpacity, lerpA)
       lungMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(lungMatRef.current.emissiveIntensity, lungEmissive, lerpA)
-      lungMatRef.current.color.lerp(lungColor.current, lerpA)
-      lungMatRef.current.emissive.lerp(lungColor.current, lerpA)
+      lungMatRef.current.color.lerp(targetLungColor, lerpA)
+      lungMatRef.current.emissive.lerp(targetLungColor, lerpA)
     }
     if (heartMatRef.current) {
       heartMatRef.current.opacity          = THREE.MathUtils.lerp(heartMatRef.current.opacity, targetHeartOpacity, lerpA)
       heartMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(heartMatRef.current.emissiveIntensity, heartEmissive, lerpA)
-      heartMatRef.current.color.lerp(heartColor.current, lerpA)
-      heartMatRef.current.emissive.lerp(heartColor.current, lerpA)
+      heartMatRef.current.color.lerp(targetHeartColor, lerpA)
+      heartMatRef.current.emissive.lerp(targetHeartColor, lerpA)
     }
     if (liverMatRef.current) {
       liverMatRef.current.opacity          = THREE.MathUtils.lerp(liverMatRef.current.opacity, targetLiverOpacity, lerpA)
       liverMatRef.current.emissiveIntensity = THREE.MathUtils.lerp(liverMatRef.current.emissiveIntensity, liverEmissive, lerpA)
-      liverMatRef.current.color.lerp(liverColor.current, lerpA)
-      liverMatRef.current.emissive.lerp(liverColor.current, lerpA)
+      liverMatRef.current.color.lerp(targetLiverColor, lerpA)
+      liverMatRef.current.emissive.lerp(targetLiverColor, lerpA)
     }
   })
 
@@ -1323,8 +1334,6 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
 
   useEffect(() => {
     if (!transparent) {
-      const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-      const port = process.env.NEXT_PUBLIC_WS_PORT || '8080'
       const conditionEndpointMap: Record<string, string> = {
         diabetes: 'diabetes',
         arrhythmia: 'cardiac',
@@ -1332,7 +1341,19 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
         epilepsy: 'neurological'
       }
       const endpoint = conditionEndpointMap[currentCondition] || 'diabetes'
-      const wsUrl = `ws://${host}:${port}/${endpoint}`
+      
+      let wsUrl = '';
+      if (typeof window !== 'undefined') {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        if (process.env.NODE_ENV === 'production') {
+          wsUrl = `${protocol}//${window.location.host}/${endpoint}`;
+        } else {
+          const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
+          wsUrl = `${protocol}//${window.location.hostname}:${port}/${endpoint}`;
+        }
+      } else {
+        wsUrl = `ws://localhost:8080/${endpoint}`;
+      }
 
       useTelemetryStore.getState().disconnectFromTelemetry()
       useTelemetryStore.getState().connectToTelemetry(wsUrl)

@@ -113,10 +113,11 @@ export default function Page() {
     }
   }, [audioCtx, volume]);
 
-  const handleToggleAudio = useCallback(() => {
+  const handleToggleAudio = useCallback((overrideVal?: boolean) => {
     if (typeof window === 'undefined') return;
     try {
-      if (!audioEnabled) {
+      const targetState = typeof overrideVal === 'boolean' ? overrideVal : !audioEnabled;
+      if (targetState) {
         const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
         if (!AudioCtxClass) return;
         
@@ -582,18 +583,16 @@ All physical telemetry pipelines verified compile-safe and responsive.
       updateTelemetryFrame({
         bpm: hr || 72,
         oxygenSaturation: spo2 || 98,
+        respiratoryRate: displaySample.respiratoryRate ?? 16,
+        glucose: displaySample.glucose ?? 100,
+        isCrisisActive: displaySample.isCrisisActive ?? false,
         brainwaveFrequency: activeTrackKey === 'SURGEON'
           ? (activeTrackData.tremorFreq || 2.1) * 3.5
           : activeTrackKey === 'TRAIN_PILOT'
             ? (100 - (activeTrackData.perclos || 0)) / 6
             : activeTrackKey === 'TRUCKER'
               ? (activeTrackData.alertness ?? 96) / 8
-              : 12.5 + (Math.sin(samples.length * 0.1) * 2),
-        glucose: activeTrackKey === 'TRUCKER'
-          ? (activeTrackData.alertness ?? 96) * 1.25
-          : activeTrackKey === 'ASTRONAUT'
-            ? (activeTrackData.pCO2 ?? 2.5) * 35
-            : 90 + (Math.sin(samples.length * 0.05) * 15)
+              : 12.5 + (Math.sin(samples.length * 0.1) * 2)
       });
     }
   }, [displaySample, hr, spo2, activeTrackKey, updateTelemetryFrame, samples.length]);
@@ -676,7 +675,7 @@ All physical telemetry pipelines verified compile-safe and responsive.
         crisis={crisis}
         hr={hr}
         audioEnabled={audioEnabled}
-        setAudioEnabled={setAudioEnabled}
+        setAudioEnabled={handleToggleAudio}
         volume={volume}
         setVolume={setVolume}
         connected={connected}

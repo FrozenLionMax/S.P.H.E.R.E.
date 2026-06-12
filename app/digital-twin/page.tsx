@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Activity,
   Heart,
@@ -142,6 +142,7 @@ interface Point3D {
 export default function DigitalTwin() {
   const storeCondition = useTelemetryStore((s) => s.currentCondition)
   const activeCondition = (['diabetes', 'arrhythmia', 'asthma', 'epilepsy'].includes(storeCondition) ? storeCondition : 'diabetes') as ConditionKey
+  const isCrisis = useTelemetryStore((s) => s.liveTelemetryFrame.isCrisisActive)
   // UI Render Throttling: Poll telemetry store at 2fps instead of reacting at 60fps
   // This drastically improves DOM performance and prevents UI thread blocking
   const [telemetry, setTelemetry] = useState({
@@ -818,6 +819,7 @@ export default function DigitalTwin() {
       // Stream speed adjustments
       const condition = CONDITIONS[activeCondition]
       const now = Date.now()
+      const isCrisisActive = useTelemetryStore.getState().liveTelemetryFrame.isCrisisActive
       
       // Calculate active cardiac duration (R-spike interval)
       const beatInterval = 60000 / (liveBpm || condition.bpm)
@@ -848,7 +850,11 @@ export default function DigitalTwin() {
       }
       
       // Add irregular muscle jitter
-      ecgVal += (Math.random() - 0.5) * 0.18
+      if (isCrisisActive) {
+        ecgVal += (Math.random() - 0.5) * 0.45
+      } else {
+        ecgVal += (Math.random() - 0.5) * 0.18
+      }
       
       if (elapsed >= beatInterval) {
         lastBeatTime = now - (Math.random() * 80) // Jerky random interval offset
@@ -857,18 +863,24 @@ export default function DigitalTwin() {
       }
 
       // Brain wave EEG activity - High frequency chaotic neural discharges
-      let eegVal = Math.sin(now * 0.08) * 0.8 + Math.cos(now * 0.22) * 0.6
-      if (Math.random() > 0.7) {
-        eegVal += (Math.random() > 0.5 ? 1.4 : -1.4) // massive spike amplitude
+      let eegVal = Math.sin(now * (isCrisisActive ? 0.25 : 0.08)) * (isCrisisActive ? 1.5 : 0.8) + Math.cos(now * (isCrisisActive ? 0.45 : 0.22)) * (isCrisisActive ? 1.2 : 0.6)
+      if (Math.random() > (isCrisisActive ? 0.4 : 0.7)) {
+        eegVal += (Math.random() > 0.5 ? 2.5 : -2.5) * (isCrisisActive ? 1.5 : 1.0) // massive spike amplitude
       }
 
       // Respiration pulmonary waves (RESP) - Shallow hyperventilation compensation
-      const respHz = 18 / 60
+      const respHz = (isCrisisActive ? 35 : 18) / 60
       const respPeriod = 1000 / respHz
       const respPhase = (now % respPeriod) / respPeriod
-      let respVal = Math.sin(respPhase * Math.PI * 2) * 0.3
-      if (respPhase > 0.4 && respPhase < 0.6) {
-        respVal -= 0.15 // gasping dip
+      let respVal = Math.sin(respPhase * Math.PI * 2) * (isCrisisActive ? 0.65 : 0.3)
+      if (isCrisisActive) {
+        if (respPhase > 0.3 && respPhase < 0.7) {
+          respVal -= 0.35 // deeper gasping dip
+        }
+      } else {
+        if (respPhase > 0.4 && respPhase < 0.6) {
+          respVal -= 0.15 // gasping dip
+        }
       }
 
       ecgBuffer[writeIndex] = ecgVal
@@ -977,6 +989,59 @@ export default function DigitalTwin() {
   return (
     <div className="min-h-screen bg-[#050807] text-slate-100 font-sans flex flex-col relative overflow-hidden">
       
+      {/* Crisis Warning Vignette overlay */}
+      <AnimatePresence>
+        {isCrisis && (
+          <motion.div
+            key="vig"
+            className="fixed inset-0 z-50 pointer-events-none"
+            style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(255,59,92,0.09) 0%, transparent 65%)' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0, 1, 0.5] }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.9, repeat: Infinity, repeatType: 'mirror' }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Top Crisis Banner */}
+      <AnimatePresence>
+        {isCrisis && (
+          <motion.div
+            key="crisis-banner"
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ 
+              y: 0, 
+              opacity: 1,
+              backgroundColor: ['rgba(255,59,92,0.12)', 'rgba(255,59,92,0.24)', 'rgba(255,59,92,0.12)']
+            }}
+            exit={{ y: -20, opacity: 0 }}
+            transition={{
+              y: { type: 'spring', stiffness: 260, damping: 26 },
+              opacity: { duration: 0.2 },
+              backgroundColor: { repeat: Infinity, duration: 1.5, ease: 'easeInOut' }
+            }}
+            className="fixed left-0 right-0 z-50 flex items-center justify-center py-2 px-6 border-b border-red-500/30 text-center font-mono"
+            style={{
+              top: 64,
+              backdropFilter: 'blur(8px)',
+              boxShadow: '0 4px 15px rgba(255, 59, 92, 0.08)'
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <motion.span 
+                className="w-1.5 h-1.5 rounded-full bg-[#ff3b5c]"
+                animate={{ scale: [1, 1.3, 1], opacity: [1, 0.4, 1] }}
+                transition={{ duration: 0.8, repeat: Infinity }}
+              />
+              <span className="text-[10px] md:text-[11px] font-bold tracking-[0.12em] uppercase text-red-400">
+                CRITICAL BIO-HOMEOSTASIS OVERRIDE ACTIVE // PATIENT SEVERE DISTRESS
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Top Banner Header */}
       <header className="h-16 border-b border-white/5 bg-[#050807]/90 backdrop-blur-md px-6 flex items-center justify-between relative z-50">
         
@@ -993,41 +1058,72 @@ export default function DigitalTwin() {
         {/* Center/Right: Title and Global States */}
         <div className="flex items-center gap-6">
           <div className="hidden xl:flex items-center gap-3">
-            <div className="w-8 h-8 rounded border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center animate-pulse">
-              <Cpu className="w-4 h-4 text-emerald-400" />
+            <div className={`w-8 h-8 rounded border ${isCrisis ? 'border-red-500/40 bg-red-500/10' : 'border-emerald-500/40 bg-emerald-500/10'} flex items-center justify-center animate-pulse`}>
+              <Cpu className={`w-4 h-4 ${isCrisis ? 'text-red-400' : 'text-emerald-400'}`} />
             </div>
-            <h1 className="text-sm font-semibold tracking-wider font-mono text-emerald-400 uppercase">
+            <h1 className={`text-sm font-semibold tracking-wider font-mono uppercase ${isCrisis ? 'text-red-400' : 'text-emerald-400'}`}>
               DIGITAL TWIN SYNAPSE LINK v4.0.1
             </h1>
           </div>
 
           <div className="hidden md:flex items-center gap-6 font-mono text-[10px]">
             <div className="flex items-center gap-2 border-r border-white/5 pr-6">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+              <span className={`w-1.5 h-1.5 rounded-full animate-ping ${isCrisis ? 'bg-red-500' : 'bg-emerald-400'}`}></span>
               <span className="text-slate-400">LINK NODE:</span>
-              <span className="text-emerald-400 font-semibold">ONLINE</span>
+              <span className={`font-semibold ${isCrisis ? 'text-red-500 animate-pulse' : 'text-emerald-400'}`}>
+                {isCrisis ? 'CRISIS OVERRIDE' : 'ONLINE'}
+              </span>
             </div>
             
             <div className="flex items-center gap-2 border-r border-white/5 pr-6">
               <span className="text-slate-400">SYS TIME:</span>
-              <span className="text-emerald-400 font-semibold">{sysTime || '00:00:00.000'}</span>
+              <span className={`font-semibold ${isCrisis ? 'text-red-400' : 'text-emerald-400'}`}>{sysTime || '00:00:00.000'}</span>
             </div>
 
             <div className="flex items-center gap-2">
               <span className="text-slate-400">CONDITION:</span>
               <span className={`font-semibold uppercase ${
+                isCrisis ? 'text-red-500 animate-pulse font-bold' :
                 CONDITIONS[activeCondition].status === 'NOMINAL' ? 'text-emerald-400' :
                 CONDITIONS[activeCondition].status === 'WARNING' ? 'text-amber-400' : 'text-red-500'
               }`}>
-                {CONDITIONS[activeCondition].name}
+                {isCrisis ? `CRITICAL ${CONDITIONS[activeCondition].name}` : CONDITIONS[activeCondition].name}
               </span>
+            </div>
+
+            <div className="flex items-center gap-2 pl-6 border-l border-white/5">
+              <span className="text-slate-400">AUDIO:</span>
+              <span className="font-semibold uppercase" style={{ color: audioEnabled ? '#10b981' : '#64748b' }}>
+                {audioEnabled ? 'ON' : 'OFF'}
+              </span>
+              <button
+                onClick={toggleAudio}
+                className="w-6 h-3 rounded-sm border flex items-center px-0.5 transition-colors shrink-0 cursor-pointer ml-1"
+                style={{
+                  borderColor: audioEnabled ? '#10b981' : '#334155',
+                  background: audioEnabled ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                }}
+                role="switch"
+                aria-checked={audioEnabled}
+                aria-label="Toggle system audio"
+              >
+                <motion.div
+                  className="w-2 h-2 rounded-[1px]"
+                  style={{ background: audioEnabled ? '#10b981' : '#334155' }}
+                  animate={{ x: audioEnabled ? 10 : 0 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                />
+              </button>
             </div>
           </div>
         </div>
       </header>
 
       {/* Main Grid Layout */}
-      <main className="flex-1 p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 overflow-hidden min-h-0">
+      <main 
+        className="flex-1 p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 overflow-hidden min-h-0 transition-all duration-300"
+        style={{ paddingTop: isCrisis ? 35 : 16 }}
+      >
         
         {/* Left Sidebar - Patient Demographics & Vitals Monitor */}
         <section className="lg:col-span-1 flex flex-col gap-4 overflow-y-auto">
@@ -1070,12 +1166,48 @@ export default function DigitalTwin() {
             </div>
           </div>
 
-          {/* System Status (Static Title Card) */}
-          <div className="p-3 rounded border border-amber-500/25 bg-amber-500/5 text-amber-400 font-mono flex flex-col gap-1 shadow-[inset_0_0_12px_rgba(245,158,11,0.05)]">
+          {/* System Status (Dynamic Title Card) */}
+          <div 
+            className={`p-3 rounded border font-mono flex flex-col gap-1 transition-all duration-300 ${
+              isCrisis 
+                ? 'border-red-500/30 bg-red-950/20 text-red-400 shadow-[inset_0_0_12px_rgba(239,68,68,0.1)]' 
+                : CONDITIONS[activeCondition].status === 'CRISIS'
+                ? 'border-red-500/20 bg-red-950/5 text-red-400/80 shadow-[inset_0_0_12px_rgba(239,68,68,0.05)]'
+                : CONDITIONS[activeCondition].status === 'WARNING'
+                ? 'border-amber-500/25 bg-amber-500/5 text-amber-400 shadow-[inset_0_0_12px_rgba(245,158,11,0.05)]'
+                : 'border-emerald-500/25 bg-emerald-500/5 text-emerald-400 shadow-[inset_0_0_12px_rgba(16,185,129,0.05)]'
+            }`}
+          >
             <span className="text-[9px] text-slate-500 tracking-wider uppercase font-semibold">SYSTEM STATUS</span>
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide">
-              <Activity className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-              METABOLIC MONITORING // DIABETIC GLUCOSE SPIKE
+              {isCrisis ? (
+                <>
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-500 animate-bounce" />
+                  <span>
+                    CRITICAL OVERRIDE ACTIVE // {
+                      activeCondition === 'diabetes' ? 'METABOLIC METRIC CRISIS' :
+                      activeCondition === 'arrhythmia' ? 'CARDIOVASCULAR CRISIS' :
+                      activeCondition === 'asthma' ? 'PULMONARY HYPOXIA CRISIS' :
+                      'NEUROLOGICAL SEIZURE CRISIS'
+                    }
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Activity className={`w-3.5 h-3.5 animate-pulse ${
+                    CONDITIONS[activeCondition].status === 'CRISIS' ? 'text-red-400' :
+                    CONDITIONS[activeCondition].status === 'WARNING' ? 'text-amber-400' : 'text-emerald-400'
+                  }`} />
+                  <span>
+                    {
+                      activeCondition === 'diabetes' ? 'METABOLIC MONITORING' :
+                      activeCondition === 'arrhythmia' ? 'CARDIAC MONITORING' :
+                      activeCondition === 'asthma' ? 'RESPIRATORY MONITORING' :
+                      'NEUROLOGICAL MONITORING'
+                    } // {CONDITIONS[activeCondition].name}
+                  </span>
+                </>
+              )}
             </div>
           </div>
 
@@ -1089,7 +1221,11 @@ export default function DigitalTwin() {
           <div className="grid grid-cols-2 gap-3 flex-1 lg:flex-initial">
             {/* BPM */}
             <div className={`glass-panel p-3 rounded flex flex-col justify-between min-h-[75px] relative transition-all duration-300 ${
-              anomalies.bpm ? '!border-amber-500 !shadow-[inset_0_0_20px_rgba(245,158,11,0.2)]' : ''
+              liveBpm > 100 || liveBpm < 60
+                ? 'panel-critical bg-red-950/5'
+                : (liveBpm === 100 || liveBpm === 60 || anomalies.bpm)
+                ? 'panel-warning bg-amber-950/5'
+                : ''
             }`}>
               {anomalies.bpm && (
                 <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-1.5 py-0.5 rounded text-[7px] font-bold tracking-widest animate-pulse whitespace-nowrap">
@@ -1098,10 +1234,22 @@ export default function DigitalTwin() {
               )}
               <div className="flex items-center justify-between text-slate-500 font-mono text-[9px]">
                 <span>HEART RATE</span>
-                <Heart className={`w-3.5 h-3.5 ${activeCondition === 'arrhythmia' ? 'text-red-500 animate-ping' : anomalies.bpm ? 'text-amber-500 animate-pulse' : 'text-emerald-400'}`} />
+                <Heart className={`w-3.5 h-3.5 ${
+                  liveBpm > 100 || liveBpm < 60
+                    ? 'text-red-500 animate-ping'
+                    : (liveBpm === 100 || liveBpm === 60 || anomalies.bpm)
+                    ? 'text-amber-500 animate-pulse'
+                    : 'text-emerald-400'
+                }`} />
               </div>
               <div className="flex items-baseline gap-1 mt-1">
-                <span className="text-xl font-bold font-mono text-slate-100">
+                <span className={`text-xl font-bold font-mono ${
+                  liveBpm > 100 || liveBpm < 60
+                    ? 'text-red-500 animate-pulse font-bold'
+                    : (liveBpm === 100 || liveBpm === 60 || anomalies.bpm)
+                    ? 'text-amber-500 font-semibold'
+                    : 'text-slate-100'
+                }`}>
                   {liveBpm}
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">BPM</span>
@@ -1113,7 +1261,11 @@ export default function DigitalTwin() {
 
             {/* SpO2 */}
             <div className={`glass-panel p-3 rounded flex flex-col justify-between min-h-[75px] relative transition-all duration-300 ${
-              anomalies.spo2 ? '!border-amber-500 !shadow-[inset_0_0_20px_rgba(245,158,11,0.2)]' : ''
+              liveSpo2 < 95
+                ? 'panel-critical bg-red-950/5'
+                : (liveSpo2 === 95 || anomalies.spo2)
+                ? 'panel-warning bg-amber-950/5'
+                : ''
             }`}>
               {anomalies.spo2 && (
                 <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-1.5 py-0.5 rounded text-[7px] font-bold tracking-widest animate-pulse whitespace-nowrap">
@@ -1122,11 +1274,21 @@ export default function DigitalTwin() {
               )}
               <div className="flex items-center justify-between text-slate-500 font-mono text-[9px]">
                 <span>BLOOD OXYGEN</span>
-                <Activity className={`w-3.5 h-3.5 ${anomalies.spo2 ? 'text-amber-500 animate-pulse' : 'text-emerald-400'}`} />
+                <Activity className={`w-3.5 h-3.5 ${
+                  liveSpo2 < 95
+                    ? 'text-red-500 animate-pulse'
+                    : (liveSpo2 === 95 || anomalies.spo2)
+                    ? 'text-amber-500 animate-pulse'
+                    : 'text-emerald-400'
+                }`} />
               </div>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className={`text-xl font-bold font-mono ${
-                  liveSpo2 < 95 ? 'text-red-500 animate-pulse' : 'text-slate-100'
+                  liveSpo2 < 95
+                    ? 'text-red-500 animate-pulse font-bold'
+                    : (liveSpo2 === 95 || anomalies.spo2)
+                    ? 'text-amber-500 font-semibold'
+                    : 'text-slate-100'
                 }`}>
                   {liveSpo2}%
                 </span>
@@ -1138,13 +1300,31 @@ export default function DigitalTwin() {
             </div>
 
             {/* Respiration */}
-            <div className="glass-panel p-3 rounded flex flex-col justify-between min-h-[75px]">
+            <div className={`glass-panel p-3 rounded flex flex-col justify-between min-h-[75px] transition-all duration-300 ${
+              liveResp > 20 || liveResp < 12
+                ? 'panel-critical bg-red-950/5'
+                : (liveResp === 20 || liveResp === 12)
+                ? 'panel-warning bg-amber-950/5'
+                : ''
+            }`}>
               <div className="flex items-center justify-between text-slate-500 font-mono text-[9px]">
                 <span>RESPIRATION</span>
-                <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                <RefreshCw className={`w-3.5 h-3.5 ${
+                  liveResp > 20 || liveResp < 12
+                    ? 'text-red-500 animate-spin'
+                    : (liveResp === 20 || liveResp === 12)
+                    ? 'text-amber-500 animate-spin'
+                    : 'text-emerald-400'
+                }`} />
               </div>
               <div className="flex items-baseline gap-1 mt-1">
-                <span className="text-xl font-bold font-mono text-slate-100">
+                <span className={`text-xl font-bold font-mono ${
+                  liveResp > 20 || liveResp < 12
+                    ? 'text-red-500 animate-pulse font-bold'
+                    : (liveResp === 20 || liveResp === 12)
+                    ? 'text-amber-500 animate-pulse font-semibold'
+                    : 'text-slate-100'
+                }`}>
                   {liveResp}
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">/MIN</span>
@@ -1156,20 +1336,34 @@ export default function DigitalTwin() {
 
             {/* Blood Glucose */}
             <div className={`glass-panel p-3 rounded flex flex-col justify-between min-h-[75px] relative transition-all duration-300 ${
-              anomalies.glucose ? '!border-amber-500 !shadow-[inset_0_0_20px_rgba(245,158,11,0.2)]' : ''
+              liveGlucose > 200
+                ? 'panel-critical bg-red-950/5'
+                : (liveGlucose > 140 || liveGlucose < 70 || anomalies.glucose)
+                ? 'panel-warning bg-amber-950/5'
+                : ''
             }`}>
-              {anomalies.glucose && (
+              {(anomalies.glucose) && (
                 <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-1.5 py-0.5 rounded text-[7px] font-bold tracking-widest animate-pulse whitespace-nowrap">
                   ANOMALY PREDICTED
                 </div>
               )}
               <div className="flex items-center justify-between text-slate-500 font-mono text-[9px]">
                 <span>BLOOD GLUCOSE</span>
-                <Shield className={`w-3.5 h-3.5 ${liveGlucose > 200 ? 'text-amber-500 animate-pulse' : anomalies.glucose ? 'text-amber-500 animate-pulse' : 'text-emerald-400'}`} />
+                <Shield className={`w-3.5 h-3.5 ${
+                  liveGlucose > 200
+                    ? 'text-red-500 animate-pulse'
+                    : (liveGlucose > 140 || liveGlucose < 70 || anomalies.glucose)
+                    ? 'text-amber-500 animate-pulse'
+                    : 'text-emerald-400'
+                }`} />
               </div>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className={`text-xl font-bold font-mono ${
-                  liveGlucose > 200 ? 'text-amber-500 animate-pulse' : 'text-slate-100'
+                  liveGlucose > 200
+                    ? 'text-red-500 animate-pulse font-bold'
+                    : (liveGlucose > 140 || liveGlucose < 70 || anomalies.glucose)
+                    ? 'text-amber-500 animate-pulse font-semibold'
+                    : 'text-slate-100'
                 }`}>
                   {liveGlucose}
                 </span>
@@ -1304,6 +1498,23 @@ export default function DigitalTwin() {
 
           {/* Integration Controls (Right, Bottom) */}
           <div className="glass-panel p-4 rounded flex flex-col gap-2.5">
+            
+            {/* Crisis Override Resolve Control */}
+            <button
+              onClick={() => {
+                useTelemetryStore.getState().resolveCrisis()
+                if (audioEnabled) {
+                  playPulseSound(880, 0.3, 0.08)
+                }
+                const oldLog = tickerLogs
+                setTickerLogs(['Stabilization Protocol Engaged.', 'Vitals recovery initiated...', ...oldLog])
+              }}
+              className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-400 font-mono text-[10px] font-semibold tracking-widest uppercase rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-1.5 mb-1"
+            >
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+              RESOLVE CRISIS
+            </button>
+
             <button
               onClick={() => {
                 if (audioEnabled) {

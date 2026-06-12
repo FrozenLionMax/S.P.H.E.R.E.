@@ -14,6 +14,7 @@ export interface TelemetryDataFrame {
   deviceStatus: 'nominal' | 'warning' | 'critical' | 'offline'
   respiratoryRate: number
   stressIndex: number
+  isCrisisActive: boolean
 }
 
 export type ConditionType = 'general' | 'arrhythmia' | 'asthma' | 'epilepsy' | 'cardiac' | 'respiratory' | 'neurological' | 'diabetes'
@@ -42,6 +43,8 @@ export interface TelemetryStoreState {
   updateTelemetryFrame: (frame: Partial<TelemetryDataFrame>) => void
   customZoomTarget: { pos: number[], target: number[] } | null
   setCustomZoomTarget: (target: { pos: number[], target: number[] } | null) => void
+  triggerCrisis: () => void
+  resolveCrisis: () => void
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,7 +65,8 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
     glucose: 95,
     deviceStatus: 'nominal',
     respiratoryRate: 16,
-    stressIndex: 45
+    stressIndex: 45,
+    isCrisisActive: false
   },
   websocketStatus: 'idle',
   reconnectAttempts: 0,
@@ -105,6 +109,16 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
         ...frame
       }
     })),
+  triggerCrisis: () => {
+    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
+      socketInstance.send(JSON.stringify({ type: 'INITIATE_CRISIS' }))
+    }
+  },
+  resolveCrisis: () => {
+    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
+      socketInstance.send(JSON.stringify({ type: 'RESOLVE_CRISIS' }))
+    }
+  },
 
   // --- Connection Actions ---
   connectToTelemetry: (websocketUrl) => {
@@ -154,6 +168,7 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
 
           const rawResp = payload.respiratoryRate ?? (rawSpo2 < 90 ? 24 : rawBpm > 100 ? 20 : 16)
           const rawStress = payload.stressIndex ?? payload.stress ?? (rawBpm > 120 ? 85 : rawBpm > 100 ? 70 : rawSpo2 < 90 ? 75 : 45)
+          const isCrisisActive = payload.isCrisisActive === true || payload.isCrisisActive === 'true' || payload.crisis === true || payload.crisis === 'true';
 
           // Boundaries clamp: prevent division by zero or NaN values from breaking WebGL coordinates
           const bpm = Math.max(20, Math.min(250, Number(rawBpm) || 72))
@@ -175,7 +190,8 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
               glucose,
               deviceStatus,
               respiratoryRate,
-              stressIndex
+              stressIndex,
+              isCrisisActive
             }
           })
         } catch (parseErr) {
@@ -249,3 +265,4 @@ export const useCurrentCondition = () => useTelemetryStore((s) => s.currentCondi
 export const useActiveUserProfile = () => useTelemetryStore((s) => s.activeUserProfile)
 export const useWebsocketStatus = () => useTelemetryStore((s) => s.websocketStatus)
 export const useSelectedOrgan = () => useTelemetryStore((s) => s.selectedOrgan)
+export const useIsCrisisActive = () => useTelemetryStore((s) => s.liveTelemetryFrame.isCrisisActive)

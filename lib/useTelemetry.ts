@@ -13,6 +13,8 @@ export interface TelemetryPayload {
   // Server-simulated physical metrics
   temperature?: number;
   pressure?: number;
+  glucose?: number;
+  respiratoryRate?: number;
 
   // Server-simulated subsystem statuses
   subsystems?: {
@@ -118,9 +120,19 @@ export function useTelemetry() {
 
   useEffect(() => {
     // Instantiate persistent WebSocket connection
-    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-    const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
-    const ws = new WebSocket(`ws://${host}:${port}`);
+    let wsUrl = '';
+    if (typeof window !== 'undefined') {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      if (process.env.NODE_ENV === 'production') {
+        wsUrl = `${protocol}//${window.location.host}`;
+      } else {
+        const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
+        wsUrl = `${protocol}//${window.location.hostname}:${port}`;
+      }
+    } else {
+      wsUrl = 'ws://localhost:8080';
+    }
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {

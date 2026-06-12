@@ -15,6 +15,17 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+const dev = process.env.NODE_ENV !== 'production';
+const startNext = process.env.NODE_ENV === 'production' || process.env.UNIFIED_SERVER === 'true';
+let nextApp = null;
+let handle = null;
+
+if (startNext) {
+  const next = require('next');
+  nextApp = next({ dev });
+  handle = nextApp.getRequestHandler();
+}
+
 function nowTime() {
   const d = new Date();
   return d.toTimeString().split(' ')[0];
@@ -49,6 +60,8 @@ const TRACKS = {
 let state = {
   heartRate: 75,
   spO2: 98.2,
+  glucose: 100,
+  respiratoryRate: 16,
   cognitiveLatency: 210,
   environmentMetric: TRACKS.PILOT.envBase,
   isCrisisActive: false,
@@ -113,7 +126,8 @@ let recoveryBuffers = {
   gripForce: 0,
   gripAsymmetry: 0,
   alertness: 0,
-  v2vLink: 0
+  v2vLink: 0,
+  respiratoryRate: 0
 };
 
 let demoInterval = null;
@@ -165,6 +179,7 @@ function resetStateToTrack(trackName) {
   state.isCrisisActive = false;
   state.heartRate = 75;
   state.spO2 = 98.2;
+  state.glucose = (trackName === 'TRAIN_PILOT' || trackName === 'TRUCKER') ? 210 : 100;
   state.cognitiveLatency = 210;
   state.environmentMetric = TRACKS[trackName] ? TRACKS[trackName].envBase : 0;
 
@@ -242,6 +257,20 @@ setInterval(() => {
     if (state.spO2 < 50) state.spO2 = 50;
     if (state.heartRate > 220) state.heartRate = 220;
 
+    // Simulate Glucose drift under crisis
+    if (state.activeTrack === 'TRAIN_PILOT' || state.activeTrack === 'TRUCKER') {
+      state.glucose = applyJitter(state.glucose + 7.5, 70, 310, 2.5);
+    } else {
+      state.glucose = applyJitter(state.glucose + 1.2, 70, 200, 1.0);
+    }
+
+    // Simulate Respiration drift under crisis
+    if (state.activeTrack === 'ASTRONAUT') {
+      state.respiratoryRate = applyJitter(state.respiratoryRate + 0.6, 12, 30, 0.3);
+    } else {
+      state.respiratoryRate = applyJitter(state.respiratoryRate + 0.4, 12, 24, 0.2);
+    }
+
     // Simulate Temperature Drift during crisis
     if (state.activeTrack === 'PILOT') {
       state.temperature = applyJitter(state.temperature + 0.08, 98.6, 102.5, 0.04);
@@ -296,6 +325,8 @@ setInterval(() => {
     // Safe Mode: Homeostasis Jitter & System Recovery
     state.heartRate = applyJitter(state.heartRate, 72, 78, 1.5);
     state.spO2 = applyJitter(state.spO2, 97.8, 98.8, 0.2);
+    state.glucose = applyJitter(state.glucose, 95, 114, 1.5);
+    state.respiratoryRate = applyJitter(state.respiratoryRate, 14, 16, 0.4);
     state.cognitiveLatency = applyJitter(state.cognitiveLatency, 190, 230, 5);
     state.temperature = applyJitter(state.temperature, 98.5, 98.7, 0.02);
 
@@ -454,6 +485,8 @@ setInterval(() => {
     timestamp: Date.now(),
     heartRate: state.heartRate,
     spO2: state.spO2,
+    glucose: state.glucose,
+    respiratoryRate: state.respiratoryRate,
     cognitiveLatency: state.cognitiveLatency,
     environmentMetric: state.environmentMetric,
     isCrisisActive: state.isCrisisActive,
@@ -513,6 +546,73 @@ setInterval(() => {
   });
 }, 1000);
 
+function initiateCrisis() {
+  console.log(`[WS] Crisis initiated for track: ${state.activeTrack}`);
+  state.isCrisisActive = true;
+  addLog('ALERT', `AUTOMATED OVERRIDE TRIGGERED: CRISIS STATE DETECTED.`);
+  
+  const overrideMsg = state.activeTrack === 'ASTRONAUT' ? "AUTOMATED OVERRIDE: INITIATING EMERGENCY SUIT RE-PRESSURIZATION" :
+                      state.activeTrack === 'PILOT' ? "AUTOMATED PILOT OVERRIDE: INITIATING EMERGENCY FLIGHT DESCENT RADIAN" :
+                      state.activeTrack === 'SURGEON' ? "AUTOMATED OVERRIDE: ENGAGING ROBOTIC STABILIZATION DAMPERS" :
+                      state.activeTrack === 'TRAIN_PILOT' ? "AUTOMATED OVERRIDE: ENGAGING EMERGENCY PNEUMATIC BRAKES" :
+                      "FLEET PLATOON WARNING: EXECUTING DISTRIBUTED V2V SHOULDER PULL-OVER";
+  addLog('ALERT', overrideMsg);
+
+  const crisisSequences = {
+    TRAIN_PILOT: [
+      "[PERCLOS] Micro-sleep state detected.",
+      "[BRAKES] Stage 1 pneumatic clamp engaged.",
+      "[OVERRIDE] Manual controls bypassed."
+    ],
+    PILOT: [
+      "[HYPOXIA] SpO2 below 83% threshold.",
+      "[AUTO-GCAS] Control stick locked.",
+      "[CLIMB] Wings-level pull-up initiated."
+    ],
+    ASTRONAUT: [
+      "[SCRUBBER] pCO2 spike detected.",
+      "[O2] Auxiliary valve fired.",
+      "[THRUSTER] Return-to-airlock trajectory calculated."
+    ],
+    SURGEON: [
+      "[TREMOR] 8Hz FFT amplitude critical.",
+      "[STABILIZER] Micro-filter engaged.",
+      "[HOLD] Digital scalpel locked in 3D space."
+    ],
+    TRUCKER: [
+      "[HRV] Parasympathetic override detected.",
+      "[V2V] Platoon gap expansion broadcast.",
+      "[NAV] Shoulder pull-over sequence initiated."
+    ]
+  };
+
+  const seq = crisisSequences[state.activeTrack] || [];
+  seq.forEach((msg, i) => {
+    setTimeout(() => {
+      addLog('ALERT', msg);
+    }, (i + 1) * 500);
+  });
+}
+
+function resolveCrisis() {
+  console.log(`[WS] Stabilization Protocol Engaged for track: ${state.activeTrack}`);
+  state.isCrisisActive = false;
+  // Apply massive recovery buffers to naturally pull them back to homeostasis over 10 seconds
+  recoveryBuffers.heartRate = (75 - state.heartRate) * 1.5;
+  recoveryBuffers.spO2 = (98.2 - state.spO2) * 1.5;
+  recoveryBuffers.glucose = (100 - state.glucose) * 1.5;
+  recoveryBuffers.respiratoryRate = (16 - state.respiratoryRate) * 1.5;
+  recoveryBuffers.cognitiveLatency = (210 - state.cognitiveLatency) * 1.5;
+  recoveryBuffers.pCO2 = (2.5 - state.pCO2) * 1.5;
+  recoveryBuffers.suitPressure = (4.3 - state.suitPressure) * 1.5;
+  recoveryBuffers.tremorAmplitude = (0.02 - state.tremorAmplitude) * 1.5;
+  recoveryBuffers.eda = (1.8 - state.eda) * 1.5;
+  recoveryBuffers.alertness = (96.0 - state.alertness) * 1.5;
+  recoveryBuffers.perclos = (3.5 - state.perclos) * 1.5;
+  recoveryBuffers.gForce = (1.0 - state.gForce) * 1.5;
+  addLog('OK', `STABILIZATION PROTOCOL ENGAGED. Normalizing vitals.`);
+}
+
 wss.on('connection', (ws, req) => {
   const reqUrl = req.url || '/';
   const urlObj = new URL(reqUrl, 'http://localhost');
@@ -528,6 +628,19 @@ wss.on('connection', (ws, req) => {
     console.log(`[WS] Client connected for high-fidelity simulation: ${simulationMode}`);
     ws.isDashboard = false;
     ws.simulationMode = simulationMode;
+
+    // Auto-sync active track on server to match simulation mode
+    const simulationToTrackMap = {
+      cardiac: 'PILOT',
+      respiratory: 'ASTRONAUT',
+      neurological: 'SURGEON',
+      diabetes: 'TRAIN_PILOT'
+    };
+    const targetTrack = simulationToTrackMap[simulationMode];
+    if (targetTrack && state.activeTrack !== targetTrack) {
+      console.log(`[WS] Auto-switching server activeTrack to ${targetTrack} for simulation: ${simulationMode}`);
+      resetStateToTrack(targetTrack);
+    }
 
     let phase = 0;
     let lastTime = Date.now();
@@ -546,82 +659,89 @@ wss.on('connection', (ws, req) => {
       let payload = null;
 
       if (simulationMode === 'cardiac') {
-        // Average 75 BPM with organic heart-rate fluctuations
-        const bpm = 75 + Math.sin(now / 5000) * 2 + (Math.random() - 0.5) * 1.2;
+        const bpm = state.heartRate;
         const beatInterval = 60000 / bpm;
         phase = (phase + dt / beatInterval) % 1.0;
 
-        const amplitude = getECGValue(phase) + (Math.random() - 0.5) * 0.03;
-        // Check if current phase is within the R-peak spike window
+        const amplitude = getECGValue(phase) + (Math.random() - 0.5) * (state.isCrisisActive ? 0.1 : 0.03);
         const rPeakDetected = phase >= 0.145 && phase < 0.165;
-        const glucose = 110 + Math.sin(now / 15000) * 5 + (Math.random() - 0.5) * 2;
+        const glucose = state.glucose;
+        const oxygenSaturation = state.spO2;
+        const respiratoryRate = state.respiratoryRate;
 
         payload = {
           type: 'cardiac',
           timestamp: now,
           bpm: parseFloat(bpm.toFixed(1)),
           amplitude: parseFloat(amplitude.toFixed(4)),
-          oxygenSaturation: 98.4,
+          oxygenSaturation: parseFloat(oxygenSaturation.toFixed(2)),
           glucose: parseFloat(glucose.toFixed(1)),
-          rPeakDetected
+          respiratoryRate: parseFloat(respiratoryRate.toFixed(1)),
+          rPeakDetected,
+          isCrisisActive: state.isCrisisActive
         };
       } else if (simulationMode === 'respiratory') {
-        // Respiratory rate fluctuating around 14
-        const respRate = 14 + Math.sin(now / 8000) * 0.8;
+        const respRate = state.respiratoryRate;
         const period = 60000 / respRate;
         phase = (phase + dt / period) % 1.0;
 
-        // Oscillating lung capacity (sinusoidal)
-        const lungCapacity = 2.5 + Math.sin(phase * Math.PI * 2) * 1.2 + (Math.random() - 0.5) * 0.04;
-        const oxygenSaturation = 92.5 + Math.sin(now / 12000) * 0.6 + (Math.random() - 0.5) * 0.1;
-        const glucose = 280 + Math.sin(now / 10000) * 6 + (Math.random() - 0.5) * 3;
+        const lungCapacity = 2.5 + Math.sin(phase * Math.PI * 2) * (state.isCrisisActive ? 0.8 : 1.2) + (Math.random() - 0.5) * 0.04;
+        const oxygenSaturation = state.spO2;
+        const glucose = state.glucose;
+        const bpm = state.heartRate;
 
         payload = {
           type: 'respiratory',
           timestamp: now,
-          bpm: 82.0,
+          bpm: parseFloat(bpm.toFixed(1)),
           respiratoryRate: parseFloat(respRate.toFixed(1)),
           lungCapacity: parseFloat(lungCapacity.toFixed(4)),
           oxygenSaturation: parseFloat(oxygenSaturation.toFixed(2)),
-          glucose: parseFloat(glucose.toFixed(1))
+          glucose: parseFloat(glucose.toFixed(1)),
+          isCrisisActive: state.isCrisisActive
         };
       } else if (simulationMode === 'neurological') {
-        const seizureActive = true;
-        // Fast alpha/beta variations or seizure frequency (58Hz+)
+        const seizureActive = state.isCrisisActive;
         const brainwaveFrequency = seizureActive 
           ? 58 + Math.sin(now / 3000) * 10 + (Math.random() - 0.5) * 6
           : 12 + Math.sin(now / 4000) * 2 + (Math.random() - 0.5) * 1.5;
 
-        // Array of high-frequency brain noise samples
         const eegArray = Array.from({ length: 8 }, () => {
           const base = Math.sin(now * 0.08) * 0.4 + Math.cos(now * 0.22) * 0.3;
           const noise = (Math.random() - 0.5) * (seizureActive ? 1.5 : 0.2);
           return parseFloat((base + noise).toFixed(4));
         });
-        const glucose = 115 + Math.sin(now / 12000) * 5 + (Math.random() - 0.5) * 2;
+        const glucose = state.glucose;
+        const bpm = state.heartRate;
+        const oxygenSaturation = state.spO2;
+        const respiratoryRate = state.respiratoryRate;
 
         payload = {
           type: 'neurological',
           timestamp: now,
-          bpm: 110.0,
+          bpm: parseFloat(bpm.toFixed(1)),
           brainwaveFrequency: parseFloat(brainwaveFrequency.toFixed(1)),
           eegArray,
-          oxygenSaturation: 92.2,
+          oxygenSaturation: parseFloat(oxygenSaturation.toFixed(2)),
           glucose: parseFloat(glucose.toFixed(1)),
-          seizureActive
+          respiratoryRate: parseFloat(respiratoryRate.toFixed(1)),
+          seizureActive,
+          isCrisisActive: state.isCrisisActive
         };
       } else if (simulationMode === 'diabetes') {
-        // Fluctuating high glucose value matching a diabetic spike
-        const glucose = 260 + Math.sin(now / 5000) * 15 + (Math.random() - 0.5) * 4;
-        const oxygenSaturation = 92.5 + Math.sin(now / 10000) * 0.5 + (Math.random() - 0.5) * 0.1;
-        const bpm = 88 + Math.sin(now / 6000) * 3 + (Math.random() - 0.5) * 1.0;
+        const glucose = state.glucose;
+        const oxygenSaturation = state.spO2;
+        const bpm = state.heartRate;
+        const respiratoryRate = state.respiratoryRate;
 
         payload = {
           type: 'diabetes',
           timestamp: now,
           bpm: parseFloat(bpm.toFixed(1)),
           oxygenSaturation: parseFloat(oxygenSaturation.toFixed(2)),
-          glucose: parseFloat(glucose.toFixed(1))
+          glucose: parseFloat(glucose.toFixed(1)),
+          respiratoryRate: parseFloat(respiratoryRate.toFixed(1)),
+          isCrisisActive: state.isCrisisActive
         };
       }
 
@@ -629,6 +749,19 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify(payload));
       }
     }, 16);
+
+    ws.on('message', (message) => {
+      try {
+        const parsed = JSON.parse(message);
+        if (parsed.type === 'INITIATE_CRISIS') {
+          initiateCrisis();
+        } else if (parsed.type === 'RESOLVE_CRISIS') {
+          resolveCrisis();
+        }
+      } catch (err) {
+        console.error('[WS] Failed to parse message on simulation socket:', err);
+      }
+    });
 
     ws.on('close', () => {
       console.log(`[WS] Client disconnected from high-fidelity simulation: ${simulationMode}`);
@@ -676,51 +809,7 @@ wss.on('connection', (ws, req) => {
         }
         
         if (parsed.type === 'INITIATE_CRISIS') {
-          console.log(`[WS] Crisis initiated for track: ${state.activeTrack}`);
-          state.isCrisisActive = true;
-          addLog('ALERT', `AUTOMATED OVERRIDE TRIGGERED: CRISIS STATE DETECTED.`);
-          
-          const overrideMsg = state.activeTrack === 'ASTRONAUT' ? "AUTOMATED OVERRIDE: INITIATING EMERGENCY SUIT RE-PRESSURIZATION" :
-                              state.activeTrack === 'PILOT' ? "AUTOMATED PILOT OVERRIDE: INITIATING EMERGENCY FLIGHT DESCENT RADIAN" :
-                              state.activeTrack === 'SURGEON' ? "AUTOMATED OVERRIDE: ENGAGING ROBOTIC STABILIZATION DAMPERS" :
-                              state.activeTrack === 'TRAIN_PILOT' ? "AUTOMATED OVERRIDE: ENGAGING EMERGENCY PNEUMATIC BRAKES" :
-                              "FLEET PLATOON WARNING: EXECUTING DISTRIBUTED V2V SHOULDER PULL-OVER";
-          addLog('ALERT', overrideMsg);
-
-          const crisisSequences = {
-            TRAIN_PILOT: [
-              "[PERCLOS] Micro-sleep state detected.",
-              "[BRAKES] Stage 1 pneumatic clamp engaged.",
-              "[OVERRIDE] Manual controls bypassed."
-            ],
-            PILOT: [
-              "[HYPOXIA] SpO2 below 83% threshold.",
-              "[AUTO-GCAS] Control stick locked.",
-              "[CLIMB] Wings-level pull-up initiated."
-            ],
-            ASTRONAUT: [
-              "[SCRUBBER] pCO2 spike detected.",
-              "[O2] Auxiliary valve fired.",
-              "[THRUSTER] Return-to-airlock trajectory calculated."
-            ],
-            SURGEON: [
-              "[TREMOR] 8Hz FFT amplitude critical.",
-              "[STABILIZER] Micro-filter engaged.",
-              "[HOLD] Digital scalpel locked in 3D space."
-            ],
-            TRUCKER: [
-              "[HRV] Parasympathetic override detected.",
-              "[V2V] Platoon gap expansion broadcast.",
-              "[NAV] Shoulder pull-over sequence initiated."
-            ]
-          };
-
-          const seq = crisisSequences[state.activeTrack] || [];
-          seq.forEach((msg, i) => {
-            setTimeout(() => {
-              addLog('ALERT', msg);
-            }, (i + 1) * 500);
-          });
+          initiateCrisis();
         }
         
         if (parsed.type === 'SET_TRACK') {
@@ -732,20 +821,7 @@ wss.on('connection', (ws, req) => {
         }
 
         if (parsed.type === 'RESOLVE_CRISIS') {
-          console.log(`[WS] Stabilization Protocol Engaged for track: ${state.activeTrack}`);
-          state.isCrisisActive = false;
-          // Apply massive recovery buffers to naturally pull them back to homeostasis over 10 seconds
-          recoveryBuffers.heartRate = (75 - state.heartRate) * 1.5;
-          recoveryBuffers.spO2 = (98.2 - state.spO2) * 1.5;
-          recoveryBuffers.cognitiveLatency = (210 - state.cognitiveLatency) * 1.5;
-          recoveryBuffers.pCO2 = (2.5 - state.pCO2) * 1.5;
-          recoveryBuffers.suitPressure = (4.3 - state.suitPressure) * 1.5;
-          recoveryBuffers.tremorAmplitude = (0.02 - state.tremorAmplitude) * 1.5;
-          recoveryBuffers.eda = (1.8 - state.eda) * 1.5;
-          recoveryBuffers.alertness = (96.0 - state.alertness) * 1.5;
-          recoveryBuffers.perclos = (3.5 - state.perclos) * 1.5;
-          recoveryBuffers.gForce = (1.0 - state.gForce) * 1.5;
-          addLog('OK', `STABILIZATION PROTOCOL ENGAGED. Normalizing vitals.`);
+          resolveCrisis();
         }
 
         if (parsed.type === 'START_DEMO') {
@@ -971,6 +1047,18 @@ app.get('/health', (req, res) => {
 });
 
 const PORT = process.env.NEXT_PUBLIC_WS_PORT || process.env.PORT || 8080;
-server.listen(PORT, () => {
-  console.log(`[S.P.H.E.R.E. Engine] WebSocket server running on port ${PORT}`);
-});
+
+if (nextApp && handle) {
+  // Production / unified mode: prepare Next.js then start
+  app.all('*', (req, res) => handle(req, res));
+  nextApp.prepare().then(() => {
+    server.listen(PORT, () => {
+      console.log(`[S.P.H.E.R.E. Engine] Unified server (Next.js + WebSocket) running on port ${PORT}`);
+    });
+  });
+} else {
+  // Development: standalone WebSocket server only
+  server.listen(PORT, () => {
+    console.log(`[S.P.H.E.R.E. Engine] WebSocket server running on port ${PORT}`);
+  });
+}

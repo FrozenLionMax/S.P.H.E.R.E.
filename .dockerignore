@@ -1,0 +1,39 @@
+# Dependencies
+node_modules
+npm-debug.log*
+
+# Next.js build output (rebuilt in container)
+.next
+
+# Git
+.git
+.gitignore
+
+# Hardware (not needed for web deployment)
+hardware
+
+# Tests
+tests
+
+# IDE & OS
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Lock files (use package-lock.json only)
+pnpm-lock.yaml
+
+# Build info
+tsconfig.tsbuildinfo
+
+# Docs
+README.md
+LICENSE
