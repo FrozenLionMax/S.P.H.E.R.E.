@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import GlassPanel from '@/components/ui/GlassPanel';
 import { C, TrackKey, TRACK_CONFIGS } from '@/lib/constants';
 import { Layers, Globe, Compass, Radio, Lock } from 'lucide-react';
@@ -17,7 +16,7 @@ const TARGET_VIEWBOXES: Record<TrackKey, [number, number, number, number]> = {
   ASTRONAUT: [0, 0, 200, 100],      // Full Global View
   PILOT: [22, 8, 80, 40],          // North Atlantic (JFK to Heathrow corridor)
   SURGEON: [80, 15, 30, 15],       // Western Europe (Zurich centered)
-  TRAIN_PILOT: [145, 20, 36, 18],  // East Asia (Tokyo-Osaka rail corridor)
+  TRAIN_PILOT: [138, 29, 16, 10],  // South India (Bengaluru-Chennai rail corridor zoom)
   TRUCKER: [15, 18, 40, 20]        // US Interstate 80 (SF to Salt Lake corridor)
 };
 
@@ -40,6 +39,60 @@ interface PingEvent {
   lat: number;
   lon: number;
 }
+
+interface GroundStation {
+  svgX: number;
+  svgY: number;
+  label: string;
+  color: string;
+  pulseSize: number;
+  downlinkStatus: string;
+}
+
+// Tailored local Ground Control base stations matching each operator profile's domain
+const getGroundStation = (track: TrackKey): GroundStation | null => {
+  switch (track) {
+    case 'ASTRONAUT':
+      return {
+        svgX: 143,
+        svgY: 36,
+        label: 'ISTRAC IN',
+        color: '#00e599', // Green
+        pulseSize: 4.5,
+        downlinkStatus: 'ISRO BENGALURU GROUND STATION DOWNLINK ESTABLISHED'
+      };
+    case 'PILOT':
+      return {
+        svgX: 38,
+        svgY: 20, // Gander ATC
+        label: 'GANDER ATC',
+        color: '#00d4ff', // Cyan
+        pulseSize: 4.0,
+        downlinkStatus: 'GANDER OCEANIC CONTROL RADAR LINK ESTABLISHED'
+      };
+    case 'TRAIN_PILOT':
+      return {
+        svgX: 143,
+        svgY: 36, // Bengaluru SBC terminal
+        label: 'SWR BNC HQ',
+        color: '#f59e0b', // Amber
+        pulseSize: 3.5,
+        downlinkStatus: 'INDIAN RAILWAYS BENGALURU DIVISION COMMS LINKED'
+      };
+    case 'TRUCKER':
+      return {
+        svgX: 38,
+        svgY: 28, // Salt Lake City Hub
+        label: 'SLC HUB',
+        color: '#f43f5e', // Rose
+        pulseSize: 3.5,
+        downlinkStatus: 'FHWA WESTERN FLEET DISPATCH LINK NOMINAL'
+      };
+    case 'SURGEON':
+    default:
+      return null;
+  }
+};
 
 export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps) {
   // Theme styling colors based on active operator
@@ -64,6 +117,8 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
 
   // Click-to-Ping tracker events
   const [pings, setPings] = useState<PingEvent[]>([]);
+
+  const gs = getGroundStation(activeTrackKey);
 
   // Smooth viewBox panning transition loops
   useEffect(() => {
@@ -195,35 +250,36 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
         };
       }
       case 'TRAIN_PILOT': {
-        // Japan Tokaido Rail: M 162,31 L 168,34 L 172,39 L 178,42
-        let svgX = 162;
-        let svgY = 31;
+        // Indian Railways Vande Bharat (Bengaluru to Chennai): M 143,36 L 144.2,35.8 L 145.4,36.1 L 146.5,36
+        let svgX = 143;
+        let svgY = 36;
         if (t < 0.33) {
           const p = t / 0.33;
-          svgX = 162 + p * 6;
-          svgY = 31 + p * 3;
+          svgX = 143 + p * 1.2;
+          svgY = 36 - p * 0.2;
         } else if (t < 0.66) {
           const p = (t - 0.33) / 0.33;
-          svgX = 168 + p * 4;
-          svgY = 34 + p * 5;
+          svgX = 144.2 + p * 1.2;
+          svgY = 35.8 + p * 0.3;
         } else {
           const p = (t - 0.66) / 0.34;
-          svgX = 172 + p * 6;
-          svgY = 39 + p * 3;
+          svgX = 145.4 + p * 1.1;
+          svgY = 36.1 - p * 0.1;
         }
 
-        // Tokyo to Osaka coordinates
-        const lat = 35.6812 + t * (34.7334 - 35.6812);
-        const lon = 139.7671 + t * (135.5001 - 139.7671);
+        // Bengaluru to Chennai Central coordinates
+        const lat = 12.9716 + t * (13.0827 - 12.9716);
+        const lon = 77.5946 + t * (80.2707 - 77.5946);
         
-        const speed = t < 0.05 ? t * 20 * 285 : t > 0.95 ? 285 - (t - 0.95) * 20 * 285 : 282; // km/h
+        const speed = t < 0.05 ? t * 20 * 130 : t > 0.95 ? 130 - (t - 0.95) * 20 * 130 : 130 + Math.sin(t * Math.PI * 6) * 4; // km/h (Vande Bharat speed)
+        const alt = 920 - t * 900; // Bengaluru elevation (~920m) to Chennai (~20m)
         return {
           svgX, svgY, lat, lon,
-          alt: 48, // meters
-          speed, heading: 242,
-          satellites: 11, latency: 6.8,
-          label: 'Tokaido Shinkansen Route',
-          pathName: 'RAILWAY CORRIDOR'
+          alt,
+          speed, heading: 88,
+          satellites: 11, latency: 4.8,
+          label: 'Vande Bharat Express (SBC-MAS)',
+          pathName: 'SOUTHERN RAILWAY CORRIDOR'
         };
       }
       case 'TRUCKER': {
@@ -479,36 +535,39 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
             ))}
           </g>
 
-          {/* India Ground Command Control Station Anchor */}
-          <g transform="translate(143, 36)">
-            {/* Pulsing beacon target */}
-            <polygon points="0,-2.2 2.2,0 0,2.2 -2.2,0" fill="#00e599" opacity="0.95" />
-            <polygon points="0,-4.5 4.5,0 0,4.5 -4.5,0" fill="none" stroke="#00e599" strokeWidth="0.3">
-              <animate attributeName="opacity" values="0.8;0.1;0.8" dur="2.2s" repeatCount="indefinite" />
-              <animate attributeName="transform" values="scale(1); scale(1.4); scale(1)" dur="2.2s" repeatCount="indefinite" />
-            </polygon>
-            {/* Micro station indicator label */}
-            <text 
-              x="3.5" 
-              y="1" 
-              fontSize="2.2px" 
-              fontFamily="monospace" 
-              fill="rgba(0, 229, 153, 0.9)" 
-              fontWeight="bold"
-              letterSpacing="0.04em"
-            >
-              ISTRAC IN
-            </text>
-          </g>
+          {/* Active Ground Command Station Anchor */}
+          {gs && (
+            <g transform={`translate(${gs.svgX}, ${gs.svgY})`}>
+              {/* Pulsing beacon target */}
+              <polygon points="0,-2.2 2.2,0 0,2.2 -2.2,0" fill={gs.color} opacity="0.95" />
+              <polygon points="0,-4.5 4.5,0 0,4.5 -4.5,0" fill="none" stroke={gs.color} strokeWidth="0.3">
+                <animate attributeName="opacity" values="0.8;0.1;0.8" dur="2.2s" repeatCount="indefinite" />
+                <animate attributeName="transform" values="scale(1); scale(1.4); scale(1)" dur="2.2s" repeatCount="indefinite" />
+              </polygon>
+              {/* Micro station indicator label */}
+              <text 
+                x="3.5" 
+                y="1" 
+                fontSize="2.2px" 
+                fontFamily="monospace" 
+                fill={gs.color} 
+                fontWeight="bold"
+                letterSpacing="0.04em"
+                opacity="0.9"
+              >
+                {gs.label}
+              </text>
+            </g>
+          )}
 
-          {/* Signal connection line (downlink) from Active Operator to India Base Station */}
-          {activeTrackKey !== 'SURGEON' && (
+          {/* Signal connection line (downlink) from Active Operator to its Ground Station */}
+          {gs && activeTrackKey !== 'SURGEON' && (
             <g>
               <line 
                 x1={tele.svgX} 
                 y1={tele.svgY} 
-                x2="143" 
-                y2="36" 
+                x2={gs.svgX} 
+                y2={gs.svgY} 
                 stroke={themeColor} 
                 strokeWidth="0.25" 
                 strokeDasharray="1.2,1.2" 
@@ -519,7 +578,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
                 <animateMotion 
                   dur="2.5s" 
                   repeatCount="indefinite" 
-                  path={`M ${tele.svgX},${tele.svgY} L 143,36`} 
+                  path={`M ${tele.svgX},${tele.svgY} L ${gs.svgX},${gs.svgY}`} 
                 />
               </circle>
             </g>
@@ -555,7 +614,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
               )}
               {activeTrackKey === 'TRAIN_PILOT' && (
                 <path 
-                  d="M 162,31 L 168,34 L 172,39 L 178,42" 
+                  d="M 143,36 L 144.2,35.8 L 145.4,36.1 L 146.5,36" 
                   fill="none" 
                   stroke={themeColor} 
                   strokeWidth="0.95" 
@@ -698,7 +757,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
             <span>
               {activeTrackKey === 'SURGEON'
                 ? 'SYSTEM DOWNLINK RESTRICTED (CONFIDENTIAL SESSION)'
-                : 'ISRO BENGALURU GROUND STATION DOWNLINK ESTABLISHED'}
+                : gs?.downlinkStatus || 'SECURE DATA LINK NOMINAL'}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -715,5 +774,6 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
     </GlassPanel>
   );
 }
+
 
 
