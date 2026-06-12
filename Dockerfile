@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Copy source and build Next.js
+# Copy source and build Next.js (standalone output)
 COPY . .
 RUN npm run build
 
@@ -19,14 +19,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Copy only what's needed for production
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/package-lock.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
+# Copy the standalone Next.js build (includes node_modules it needs)
+COPY --from=builder /app/.next/standalone ./
+# Copy static assets and public files (not included in standalone)
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+# Copy our custom server (replaces the default standalone server.js)
 COPY --from=builder /app/server.js ./server.js
-COPY --from=builder /app/next.config.mjs ./next.config.mjs
+# Copy full node_modules for express/ws dependencies used by server.js
+COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 8080
 
