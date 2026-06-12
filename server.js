@@ -13,7 +13,7 @@ const http = require('http');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
 const dev = process.env.NODE_ENV !== 'production';
 const startNext = process.env.NODE_ENV === 'production' || process.env.UNIFIED_SERVER === 'true';
@@ -776,9 +776,13 @@ wss.on('connection', (ws, req) => {
       }
     });
 
-    ws.on('close', () => {
-      console.log(`[WS] Client disconnected from high-fidelity simulation: ${simulationMode}`);
+    ws.on('close', (code, reason) => {
+      console.log(`[WS] Client disconnected from high-fidelity simulation: ${simulationMode} - Code: ${code}, Reason: ${reason ? reason.toString() : 'None'}`);
       clearInterval(timer);
+    });
+
+    ws.on('error', (err) => {
+      console.error(`[WS] Client error from high-fidelity simulation: ${simulationMode}:`, err);
     });
 
   } else {
@@ -1049,8 +1053,12 @@ wss.on('connection', (ws, req) => {
       }
     });
 
-    ws.on('close', () => {
-      console.log('[WS] Client disconnected (Dashboard Mode)');
+    ws.on('close', (code, reason) => {
+      console.log(`[WS] Client disconnected (Dashboard Mode) - Code: ${code}, Reason: ${reason ? reason.toString() : 'None'}`);
+    });
+
+    ws.on('error', (err) => {
+      console.error('[WS] Client error (Dashboard Mode):', err);
     });
   }
 });
@@ -1073,6 +1081,14 @@ if (nextApp && handle) {
   // Production / unified mode: prepare Next.js then start
   nextApp.prepare().then(() => {
     // In Express 5, use a middleware function instead of app.all('*')
+    app.use((req, res, next) => {
+      if (!req.url.startsWith('/_next/static')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+      next();
+    });
     app.use((req, res) => handle(req, res));
     server.listen(PORT, () => {
       console.log(`[S.P.H.E.R.E. Engine] Unified server (Next.js + WebSocket) running on port ${PORT}`);

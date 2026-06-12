@@ -130,9 +130,9 @@ export function useTelemetry() {
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       if (isLocal) {
         const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
-        return `${protocol}//${window.location.hostname}:${port}`;
+        return `${protocol}//${window.location.hostname}:${port}?t=${Date.now()}`;
       }
-      return `${protocol}//${window.location.host}`;
+      return `${protocol}//${window.location.host}?t=${Date.now()}`;
     }
 
     function connect() {

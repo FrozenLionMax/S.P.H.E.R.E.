@@ -1348,12 +1348,12 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         if (isLocal) {
           const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
-          wsUrl = `${protocol}//${window.location.hostname}:${port}/${endpoint}`;
+          wsUrl = `${protocol}//${window.location.hostname}:${port}/${endpoint}?t=${Date.now()}`;
         } else {
-          wsUrl = `${protocol}//${window.location.host}/${endpoint}`;
+          wsUrl = `${protocol}//${window.location.host}/${endpoint}?t=${Date.now()}`;
         }
       } else {
-        wsUrl = `ws://localhost:8080/${endpoint}`;
+        wsUrl = `ws://localhost:8080/${endpoint}?t=${Date.now()}`;
       }
 
       useTelemetryStore.getState().disconnectFromTelemetry()
