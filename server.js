@@ -534,6 +534,10 @@ setInterval(() => {
         alertness: state.alertness,
       } : undefined,
     },
+
+    // Demo state
+    isDemoActive: state.isDemoActive,
+    demoTime: state.demoTime,
   };
 
   const payloadStr = JSON.stringify(payload);
