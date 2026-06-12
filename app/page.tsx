@@ -692,7 +692,10 @@ All physical telemetry pipelines verified compile-safe and responsive.
         pressureSt={pressureSt}
       />
 
-      <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto lg:overflow-hidden relative z-20">
+      <div 
+        className="flex flex-col lg:flex-row flex-1 overflow-y-auto lg:overflow-hidden relative z-20 transition-all duration-300"
+        style={{ paddingTop: crisis ? 31 : 0 }}
+      >
         <motion.main
           className="flex flex-col w-full lg:w-[68%] shrink-0 lg:overflow-y-auto"
           style={{ borderRight: '1px solid var(--border)' }}
