@@ -13,7 +13,7 @@ const http = require('http');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+const wss = new WebSocketServer({ noServer: true });
 
 const dev = process.env.NODE_ENV !== 'production';
 const startNext = process.env.NODE_ENV === 'production' || process.env.UNIFIED_SERVER === 'true';
@@ -1080,15 +1080,6 @@ const PORT = process.env.NEXT_PUBLIC_WS_PORT || process.env.PORT || 8080;
 if (nextApp && handle) {
   // Production / unified mode: prepare Next.js then start
   nextApp.prepare().then(() => {
-    // In Express 5, use a middleware function instead of app.all('*')
-    app.use((req, res, next) => {
-      if (!req.url.startsWith('/_next/static')) {
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
-      }
-      next();
-    });
     app.use((req, res) => handle(req, res));
     server.listen(PORT, () => {
       console.log(`[S.P.H.E.R.E. Engine] Unified server (Next.js + WebSocket) running on port ${PORT}`);
