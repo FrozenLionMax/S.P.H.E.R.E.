@@ -150,6 +150,20 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
       reconnectTimeoutId = null
     }
 
+    // Clean up any existing socket's event listeners before starting a new one
+    // to prevent race conditions during unmount/remount cycles.
+    if (socketInstance) {
+      console.log('[TelemetryStore] Cleaning up event listeners of previous socket instance.')
+      socketInstance.onopen = null
+      socketInstance.onmessage = null
+      socketInstance.onclose = null
+      socketInstance.onerror = null
+      if (socketInstance.readyState !== WebSocket.CLOSED) {
+        socketInstance.close()
+      }
+      socketInstance = null
+    }
+
     set({ websocketStatus: 'connecting' })
     console.log(`[TelemetryStore] Spawning connection to: ${websocketUrl}`)
 
@@ -158,6 +172,11 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
       socketInstance = ws
 
       ws.onopen = () => {
+        // Enforce active socket check to block race conditions
+        if (socketInstance !== ws) {
+          console.warn('[TelemetryStore] Handshake onopen event ignored from orphaned socket.')
+          return
+        }
         console.log('[TelemetryStore] Neural socket handshake established.')
         set({ 
           websocketStatus: 'connected', 
@@ -166,6 +185,9 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
       }
 
       ws.onmessage = (event) => {
+        // Enforce active socket check
+        if (socketInstance !== ws) return
+
         try {
           // Ingestion boundaries protection: ensure the payload is safely formatted JSON
           if (typeof event.data !== 'string') {
@@ -218,6 +240,12 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
       }
 
       ws.onclose = (event) => {
+        // Enforce active socket check
+        if (socketInstance !== ws) {
+          console.log('[TelemetryStore] onclose event ignored from orphaned socket.')
+          return
+        }
+
         socketInstance = null
         if (get().websocketStatus === 'disconnected') {
           // Graceful voluntary disconnect
@@ -243,6 +271,7 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
       }
 
       ws.onerror = (error) => {
+        if (socketInstance !== ws) return
         console.warn('[TelemetryStore] WebSocket connection handshake or network layer event:', error)
       }
 
@@ -264,7 +293,14 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
     }
 
     if (socketInstance) {
-      socketInstance.close()
+      // Nullify listeners to prevent events from triggering on close
+      socketInstance.onopen = null
+      socketInstance.onmessage = null
+      socketInstance.onclose = null
+      socketInstance.onerror = null
+      if (socketInstance.readyState !== WebSocket.CLOSED) {
+        socketInstance.close()
+      }
       socketInstance = null
     }
   }
