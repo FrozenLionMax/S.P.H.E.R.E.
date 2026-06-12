@@ -73,7 +73,7 @@ export default function Sidebar({
             activeTrackKey === 'ASTRONAUT' ? 'asthma' :
             activeTrackKey === 'SURGEON' ? 'epilepsy' : 'diabetes'
           }`}
-          className="flex items-center gap-1 px-2 py-0.5 text-[8px] font-mono font-bold tracking-widest uppercase rounded border border-cyan-500/25 bg-cyan-950/20 text-cyan-400 hover:bg-cyan-500/20 hover:text-white transition-all duration-300 shadow-[0_0_8px_rgba(0,212,255,0.06)]"
+          className="flex items-center gap-1 px-3 py-1 text-[10px] font-mono font-bold tracking-widest uppercase rounded border border-cyan-400/50 bg-cyan-950/40 text-cyan-400 hover:bg-cyan-500/25 hover:text-white transition-all duration-300 shadow-[0_0_12px_rgba(0,212,255,0.15)]"
         >
           3D TWIN ➔
         </a>
