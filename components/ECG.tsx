@@ -33,6 +33,23 @@ export default function ECG({
   const yHistory = useRef<Float32Array | null>(null);
   const phaseRef = useRef<number>(0);
 
+  // Sync frequently updating props to refs to avoid restarting requestAnimationFrame loop
+  const crisisRef = useRef(crisis);
+  const hrRef = useRef(hr);
+  const audioEnabledRef = useRef(audioEnabled);
+  const soundRef = useRef(sound);
+  const audioCtxRef = useRef(audioCtx);
+  const volumeRef = useRef(volume);
+  const onBeatRef = useRef(onBeat);
+
+  useEffect(() => { crisisRef.current = crisis; }, [crisis]);
+  useEffect(() => { hrRef.current = hr; }, [hr]);
+  useEffect(() => { audioEnabledRef.current = audioEnabled; }, [audioEnabled]);
+  useEffect(() => { soundRef.current = sound; }, [sound]);
+  useEffect(() => { audioCtxRef.current = audioCtx; }, [audioCtx]);
+  useEffect(() => { volumeRef.current = volume; }, [volume]);
+  useEffect(() => { onBeatRef.current = onBeat; }, [onBeat]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -54,8 +71,6 @@ export default function ECG({
 
     const midY = H / 2;
     const ampScale = H / 120;
-    const color = crisis ? '#ff3b5c' : '#00ffaa';
-    const glowRgba = crisis ? 'rgba(255,59,92,' : 'rgba(0,255,170,';
 
     const gauss = (amp: number, center: number, width: number, t: number) => {
       return amp * Math.exp(-Math.pow((t - center) / width, 2));
@@ -64,9 +79,10 @@ export default function ECG({
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     const drawGrid = () => {
+      const curCrisis = crisisRef.current;
       if (height >= 40) {
         ctx.save();
-        ctx.strokeStyle = crisis ? 'rgba(255, 59, 92, 0.012)' : 'rgba(0, 255, 170, 0.012)';
+        ctx.strokeStyle = curCrisis ? 'rgba(255, 59, 92, 0.012)' : 'rgba(0, 255, 170, 0.012)';
         ctx.lineWidth = 0.3;
         for (let gx = 0; gx < W; gx += 4) {
           if (gx % 16 === 0) continue;
@@ -83,7 +99,7 @@ export default function ECG({
           ctx.stroke();
         }
 
-        ctx.strokeStyle = crisis ? 'rgba(255, 59, 92, 0.04)' : 'rgba(0, 255, 170, 0.04)';
+        ctx.strokeStyle = curCrisis ? 'rgba(255, 59, 92, 0.04)' : 'rgba(0, 255, 170, 0.04)';
         ctx.lineWidth = 0.5;
         for (let gx = 0; gx < W; gx += 16) {
           ctx.beginPath();
@@ -98,7 +114,7 @@ export default function ECG({
           ctx.stroke();
         }
 
-        ctx.strokeStyle = crisis ? 'rgba(255, 59, 92, 0.08)' : 'rgba(0, 255, 170, 0.08)';
+        ctx.strokeStyle = curCrisis ? 'rgba(255, 59, 92, 0.08)' : 'rgba(0, 255, 170, 0.08)';
         ctx.lineWidth = 0.8;
         ctx.beginPath();
         ctx.moveTo(0, midY);
@@ -109,6 +125,10 @@ export default function ECG({
     };
 
     const drawStatic = () => {
+      const curCrisis = crisisRef.current;
+      const bpm = hrRef.current || 75;
+      const color = curCrisis ? '#ff3b5c' : '#00ffaa';
+
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, W, H);
@@ -127,7 +147,6 @@ export default function ECG({
       ctx.lineJoin = 'round';
       ctx.beginPath();
 
-      const bpm = hr || 75;
       const beatDurationMs = 60000 / bpm;
       const T_active = Math.min(600, beatDurationMs * 0.8);
 
@@ -137,7 +156,7 @@ export default function ECG({
         const p = x / (W / 3);
         const absTime = p * beatDurationMs;
         let offset = 0;
-        if (crisis) {
+        if (curCrisis) {
           // V-Fib chaotic static representation
           offset = Math.sin(absTime * 0.05) * 14.0 + Math.cos(absTime * 0.12) * 8.0;
           offset += (Math.sin(absTime * 0.3) + Math.cos(absTime * 0.7)) * 1.5;
@@ -173,11 +192,20 @@ export default function ECG({
     const sweepSpeed = W / 3500;
 
     const tick = (time: number) => {
+      const curCrisis = crisisRef.current;
+      const bpm = hrRef.current || 75;
+      const color = curCrisis ? '#ff3b5c' : '#00ffaa';
+      const glowRgba = curCrisis ? 'rgba(255,59,92,' : 'rgba(0,255,170,';
+      const audioEnabledVal = audioEnabledRef.current;
+      const soundVal = soundRef.current;
+      const audioCtxVal = audioCtxRef.current;
+      const volumeVal = volumeRef.current;
+      const onBeatVal = onBeatRef.current;
+
       const dt = time - lastTime;
       lastTime = time;
       const safeDt = Math.max(0, Math.min(dt, 50));
 
-      const bpm = hr || 75;
       const beatDurationMs = 60000 / bpm;
       const T_active = Math.min(600, beatDurationMs * 0.8);
       const phaseAdvance = safeDt / beatDurationMs;
@@ -194,7 +222,7 @@ export default function ECG({
 
       const evaluateEcg = (p: number) => {
         const absTime = p * beatDurationMs;
-        if (crisis) {
+        if (curCrisis) {
           // Ventricular Fibrillation (V-Fib): Chaotic multi-sine waves with no distinct QRS peaks
           const vfib = Math.sin(absTime * 0.05) * 14.0 + Math.cos(absTime * 0.12) * 8.0;
           const noise = (Math.sin(absTime * 0.3) + Math.cos(absTime * 0.7)) * 1.5;
@@ -289,8 +317,8 @@ export default function ECG({
         const opacityStart = getOpacity(start);
         const opacityEnd = getOpacity(end);
 
-        const colorStart = crisis ? `rgba(255, 59, 92, ${opacityStart})` : `rgba(0, 255, 170, ${opacityStart})`;
-        const colorEnd = crisis ? `rgba(255, 59, 92, ${opacityEnd})` : `rgba(0, 255, 170, ${opacityEnd})`;
+        const colorStart = curCrisis ? `rgba(255, 59, 92, ${opacityStart})` : `rgba(0, 255, 170, ${opacityStart})`;
+        const colorEnd = curCrisis ? `rgba(255, 59, 92, ${opacityEnd})` : `rgba(0, 255, 170, ${opacityEnd})`;
 
         grad.addColorStop(0, colorStart);
         grad.addColorStop(1, colorEnd);
@@ -329,7 +357,7 @@ export default function ECG({
         drawInterval(0, head);
       }
 
-      if (height >= 60 && !crisis) { // Only draw labels if not in V-Fib crisis
+      if (height >= 60 && !curCrisis) { // Only draw labels if not in V-Fib crisis
         const minPhase = phaseRef.current - (W / sweepSpeed) / beatDurationMs;
         const maxPhase = phaseRef.current;
         const minBeat = Math.ceil(minPhase);
@@ -394,49 +422,49 @@ export default function ECG({
         if (oldT < rWaveTime || newT >= rWaveTime) crossedR = true;
       }
 
-      const isCurrentSkipped = !crisis && (newBeats % 6 === 4);
+      const isCurrentSkipped = !curCrisis && (newBeats % 6 === 4);
       if (crossedR && !isCurrentSkipped) { // Mute audio beep trigger during skipped beats
-        if (sound && onBeat) onBeat();
-        if (sound && audioEnabled && audioCtx) {
+        if (soundVal && onBeatVal) onBeatVal();
+        if (soundVal && audioEnabledVal && audioCtxVal) {
           try {
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            const gainNode = audioCtx.createGain();
+            if (audioCtxVal.state === 'suspended') audioCtxVal.resume();
+            const gainNode = audioCtxVal.createGain();
             const baseFreq = Math.max(300, Math.min(1200, 500 + (bpm - 75) * 4.5));
             
-            if (crisis) {
+            if (curCrisis) {
               const duration = 0.09;
-              gainNode.gain.setValueAtTime(0.12 * volume, audioCtx.currentTime);
-              gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
-              gainNode.connect(audioCtx.destination);
+              gainNode.gain.setValueAtTime(0.12 * volumeVal, audioCtxVal.currentTime);
+              gainNode.gain.linearRampToValueAtTime(0, audioCtxVal.currentTime + duration);
+              gainNode.connect(audioCtxVal.destination);
 
-              const osc1 = audioCtx.createOscillator();
+              const osc1 = audioCtxVal.createOscillator();
               osc1.type = 'sine';
-              osc1.frequency.setValueAtTime(baseFreq * 1.5, audioCtx.currentTime);
-              osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, audioCtx.currentTime + 0.02);
+              osc1.frequency.setValueAtTime(baseFreq * 1.5, audioCtxVal.currentTime);
+              osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, audioCtxVal.currentTime + 0.02);
               osc1.connect(gainNode);
               osc1.start();
-              osc1.stop(audioCtx.currentTime + duration);
+              osc1.stop(audioCtxVal.currentTime + duration);
 
-              const osc2 = audioCtx.createOscillator();
+              const osc2 = audioCtxVal.createOscillator();
               osc2.type = 'sine';
-              osc2.frequency.setValueAtTime(baseFreq * 1.57, audioCtx.currentTime);
-              osc2.frequency.exponentialRampToValueAtTime(baseFreq * 1.38, audioCtx.currentTime + 0.02);
+              osc2.frequency.setValueAtTime(baseFreq * 1.57, audioCtxVal.currentTime);
+              osc2.frequency.exponentialRampToValueAtTime(baseFreq * 1.38, audioCtxVal.currentTime + 0.02);
               osc2.connect(gainNode);
               osc2.start();
-              osc2.stop(audioCtx.currentTime + duration);
+              osc2.stop(audioCtxVal.currentTime + duration);
             } else {
               const duration = 0.06;
-              gainNode.gain.setValueAtTime(0.08 * volume, audioCtx.currentTime);
-              gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
-              gainNode.connect(audioCtx.destination);
+              gainNode.gain.setValueAtTime(0.08 * volumeVal, audioCtxVal.currentTime);
+              gainNode.gain.linearRampToValueAtTime(0, audioCtxVal.currentTime + duration);
+              gainNode.connect(audioCtxVal.destination);
 
-              const osc = audioCtx.createOscillator();
+              const osc = audioCtxVal.createOscillator();
               osc.type = 'sine';
-              osc.frequency.setValueAtTime(baseFreq, audioCtx.currentTime);
-              osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, audioCtx.currentTime + 0.015);
+              osc.frequency.setValueAtTime(baseFreq, audioCtxVal.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, audioCtxVal.currentTime + 0.015);
               osc.connect(gainNode);
               osc.start();
-              osc.stop(audioCtx.currentTime + duration);
+              osc.stop(audioCtxVal.currentTime + duration);
             }
           } catch (e) {}
         }
@@ -482,7 +510,7 @@ export default function ECG({
         cancelAnimationFrame(animRef.current);
       }
     };
-  }, [crisis, hr, width, height, glow, audioEnabled, sound, audioCtx, volume, onBeat]);
+  }, [width, height, glow]);
 
   return (
     <canvas

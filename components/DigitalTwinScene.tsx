@@ -16,65 +16,70 @@ interface DigitalTwinSceneProps {
 // 60FPS Dynamic SVG Biological Waveform Component
 // ─────────────────────────────────────────────────────────────────────────────
 function MiniSvgWave({ color, speed = 1.0, amplitude = 8, type = 'sine', className = "w-28 h-6" }: { color: string; speed?: number; amplitude?: number; type: 'sine' | 'ecg' | 'noise' | 'flat'; className?: string }) {
-  const [phase, setPhase] = useState(0)
+  const pathRef = useRef<SVGPathElement>(null)
 
   useEffect(() => {
     let frameId: number
+    let phase = 0
+    
     const tick = () => {
-      setPhase((p) => (p + 0.08 * speed) % (Math.PI * 2))
+      phase = (phase + 0.08 * speed) % (Math.PI * 2)
+      
+      const path = pathRef.current
+      if (path) {
+        const points: string[] = []
+        const width = 140
+        const height = 24
+        const midY = height / 2
+
+        for (let x = 0; x <= width; x += 4) {
+          let y = midY
+          if (type === 'sine') {
+            // Smooth respiratory sine wave
+            y = midY + Math.sin((x / 14) + phase) * amplitude
+          } else if (type === 'noise') {
+            // Chaotic EEG brain wave
+            const alpha = Math.sin((x / 6) + phase * 3.5) * 0.4
+            const beta = Math.cos((x / 2) + phase * 6.0) * 0.35
+            const gamma = Math.sin((x / 1) + phase * 9.0) * 0.15
+            const noise = (Math.random() - 0.5) * 0.35
+            y = midY + (alpha + beta + gamma + noise) * amplitude * 1.5
+          } else if (type === 'ecg') {
+            // ECG wave complex (P-QRS-T)
+            const p = ((x / width) * 2.5 + phase / 2) % 1.0
+            let ecg = 0
+            if (p < 0.08) {
+              ecg = Math.sin((p / 0.08) * Math.PI) * 0.1
+            } else if (p >= 0.10 && p < 0.13) {
+              ecg = -0.15
+            } else if (p >= 0.13 && p < 0.18) {
+              const t = (p - 0.13) / 0.05
+              ecg = t < 0.4 ? -0.18 + (t / 0.4) * 1.68 : 1.5 - ((t - 0.4) / 0.6) * 1.85
+            } else if (p >= 0.18 && p < 0.22) {
+              ecg = -0.3
+            } else if (p >= 0.28 && p < 0.42) {
+              ecg = Math.sin(((p - 0.28) / 0.14) * Math.PI) * 0.25
+            }
+            y = midY - ecg * amplitude
+          } else if (type === 'flat') {
+            // Flat/gentle glucose variations
+            y = midY + Math.sin((x / 20) + phase * 0.3) * (amplitude * 0.25) + (Math.random() - 0.5) * 0.4
+          }
+          points.push(`${x},${y.toFixed(1)}`)
+        }
+        path.setAttribute('d', `M ${points.join(' L ')}`)
+      }
+      
       frameId = requestAnimationFrame(tick)
     }
+    
     frameId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frameId)
-  }, [speed])
-
-  const pathData = useMemo(() => {
-    const points: string[] = []
-    const width = 140
-    const height = 24
-    const midY = height / 2
-
-    for (let x = 0; x <= width; x += 4) {
-      let y = midY
-      if (type === 'sine') {
-        // Smooth respiratory sine wave
-        y = midY + Math.sin((x / 14) + phase) * amplitude
-      } else if (type === 'noise') {
-        // Chaotic EEG brain wave
-        const alpha = Math.sin((x / 6) + phase * 3.5) * 0.4
-        const beta = Math.cos((x / 2) + phase * 6.0) * 0.35
-        const gamma = Math.sin((x / 1) + phase * 9.0) * 0.15
-        const noise = (Math.random() - 0.5) * 0.35
-        y = midY + (alpha + beta + gamma + noise) * amplitude * 1.5
-      } else if (type === 'ecg') {
-        // ECG wave complex (P-QRS-T)
-        const p = ((x / width) * 2.5 + phase / 2) % 1.0
-        let ecg = 0
-        if (p < 0.08) {
-          ecg = Math.sin((p / 0.08) * Math.PI) * 0.1
-        } else if (p >= 0.10 && p < 0.13) {
-          ecg = -0.15
-        } else if (p >= 0.13 && p < 0.18) {
-          const t = (p - 0.13) / 0.05
-          ecg = t < 0.4 ? -0.18 + (t / 0.4) * 1.68 : 1.5 - ((t - 0.4) / 0.6) * 1.85
-        } else if (p >= 0.18 && p < 0.22) {
-          ecg = -0.3
-        } else if (p >= 0.28 && p < 0.42) {
-          ecg = Math.sin(((p - 0.28) / 0.14) * Math.PI) * 0.25
-        }
-        y = midY - ecg * amplitude
-      } else if (type === 'flat') {
-        // Flat/gentle glucose variations
-        y = midY + Math.sin((x / 20) + phase * 0.3) * (amplitude * 0.25) + (Math.random() - 0.5) * 0.4
-      }
-      points.push(`${x},${y.toFixed(1)}`)
-    }
-    return `M ${points.join(' L ')}`
-  }, [phase, type, amplitude])
+  }, [speed, type, amplitude])
 
   return (
     <svg className={`${className} opacity-90 border-b border-white/[0.03] pb-0.5`} viewBox="0 0 140 24">
-      <path d={pathData} fill="none" stroke={color} strokeWidth="1.2" />
+      <path ref={pathRef} fill="none" stroke={color} strokeWidth="1.2" />
     </svg>
   )
 }
