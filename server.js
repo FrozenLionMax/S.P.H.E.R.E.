@@ -1050,8 +1050,9 @@ const PORT = process.env.NEXT_PUBLIC_WS_PORT || process.env.PORT || 8080;
 
 if (nextApp && handle) {
   // Production / unified mode: prepare Next.js then start
-  app.all('*', (req, res) => handle(req, res));
   nextApp.prepare().then(() => {
+    // In Express 5, use a middleware function instead of app.all('*')
+    app.use((req, res) => handle(req, res));
     server.listen(PORT, () => {
       console.log(`[S.P.H.E.R.E. Engine] Unified server (Next.js + WebSocket) running on port ${PORT}`);
     });
