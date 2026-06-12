@@ -12,12 +12,13 @@ interface OperatorMapProps {
 
 // Target viewBox coordinate rectangles for operator auto-focus cameras
 // Format: [minX, minY, width, height]
+// Configured to zoom into different regions of India dynamically!
 const TARGET_VIEWBOXES: Record<TrackKey, [number, number, number, number]> = {
-  ASTRONAUT: [0, 0, 200, 100],      // Full Global View
-  PILOT: [22, 8, 80, 40],          // North Atlantic (JFK to Heathrow corridor)
-  SURGEON: [80, 15, 30, 15],       // Western Europe (Zurich centered)
-  TRAIN_PILOT: [138, 29, 16, 10],  // South India (Bengaluru-Chennai rail corridor zoom)
-  TRUCKER: [15, 18, 40, 20]        // US Interstate 80 (SF to Salt Lake corridor)
+  ASTRONAUT: [0, 0, 200, 100],      // Full Global View (Astronaut orbit)
+  PILOT: [136, 26, 18, 12],        // North-to-South India flight corridor (New Delhi to Bengaluru)
+  SURGEON: [140, 29, 8, 6],         // Northern India local center (New Delhi AIIMS hospital tight zoom)
+  TRAIN_PILOT: [138, 29, 16, 10],  // South India rail corridor (Bengaluru to Chennai Central)
+  TRUCKER: [136, 29, 12, 8]        // West India expressway corridor (Mumbai to Pune)
 };
 
 // Detailed stylized vector outlines of continents mapped on a 200x100 grid
@@ -49,26 +50,26 @@ interface GroundStation {
   downlinkStatus: string;
 }
 
-// Tailored local Ground Control base stations matching each operator profile's domain
+// Tailored local Ground Control base stations located in India for each user profile
 const getGroundStation = (track: TrackKey): GroundStation | null => {
   switch (track) {
     case 'ASTRONAUT':
       return {
         svgX: 143,
-        svgY: 36,
-        label: 'ISTRAC IN',
+        svgY: 36, // Bengaluru ISRO
+        label: 'ISRO ISTRAC',
         color: '#00e599', // Green
         pulseSize: 4.5,
         downlinkStatus: 'ISRO BENGALURU GROUND STATION DOWNLINK ESTABLISHED'
       };
     case 'PILOT':
       return {
-        svgX: 38,
-        svgY: 20, // Gander ATC
-        label: 'GANDER ATC',
+        svgX: 144,
+        svgY: 32, // New Delhi DEL ATC
+        label: 'DELHI ATC',
         color: '#00d4ff', // Cyan
         pulseSize: 4.0,
-        downlinkStatus: 'GANDER OCEANIC CONTROL RADAR LINK ESTABLISHED'
+        downlinkStatus: 'DELHI AIR TRAFFIC CONTROL SECURE CHANNEL ESTABLISHED'
       };
     case 'TRAIN_PILOT':
       return {
@@ -81,12 +82,12 @@ const getGroundStation = (track: TrackKey): GroundStation | null => {
       };
     case 'TRUCKER':
       return {
-        svgX: 38,
-        svgY: 28, // Salt Lake City Hub
-        label: 'SLC HUB',
+        svgX: 141,
+        svgY: 34, // Mumbai NHAI Hub
+        label: 'MUMBAI HUB',
         color: '#f43f5e', // Rose
         pulseSize: 3.5,
-        downlinkStatus: 'FHWA WESTERN FLEET DISPATCH LINK NOMINAL'
+        downlinkStatus: 'NHAI WESTERN CORRIDOR Swarm DISPATCH LINK NOMINAL'
       };
     case 'SURGEON':
     default:
@@ -120,15 +121,20 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
 
   const gs = getGroundStation(activeTrackKey);
 
-  // Smooth viewBox panning transition loops
+  // Butter-Smooth & Frame-Rate Independent Camera Panning transition loop
   useEffect(() => {
     const target = TARGET_VIEWBOXES[activeTrackKey] || [0, 0, 200, 100];
     let animId: number;
+    let lastT = performance.now();
 
-    const lerpViewBox = () => {
+    const lerpViewBox = (now: number) => {
+      const dt = Math.min(0.05, (now - lastT) / 1000); // clamp dt to prevent giant jumps when tab goes inactive
+      lastT = now;
+
       setViewBox(prev => {
-        const easeSpeed = 0.06; // interpolation velocity
-        const next = prev.map((val, idx) => val + (target[idx] - val) * easeSpeed) as [number, number, number, number];
+        // Frame-rate independent ease factor
+        const easeFactor = 1 - Math.pow(1 - 0.08, dt * 60);
+        const next = prev.map((val, idx) => val + (target[idx] - val) * easeFactor) as [number, number, number, number];
         
         const sumDiff = next.reduce((sum, val, idx) => sum + Math.abs(val - target[idx]), 0);
         if (sumDiff < 0.005) {
@@ -195,7 +201,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
 
     switch (activeTrackKey) {
       case 'ASTRONAUT': {
-        // Orbit sinusoid wave: M 10,50 Q 55,10 100,50 T 190,50
+        // Orbit sinusoid wave centered over India region: M 10,50 Q 55,10 100,50 T 190,50
         const svgX = 10 + t * 180;
         const svgY = 50 - 35 * Math.sin(t * Math.PI * 2);
         
@@ -214,30 +220,30 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
         };
       }
       case 'PILOT': {
-        // Great Circle Arc JFK to LHR: M 38,28 Q 62,10 87,24
-        const svgX = (1 - t) * (1 - t) * 38 + 2 * (1 - t) * t * 62 + t * t * 87;
-        const svgY = (1 - t) * (1 - t) * 28 + 2 * (1 - t) * t * 10 + t * t * 24;
+        // Indian Domestic Flight DEL to BLR: M 144,32 Q 142.5,34 143,36
+        const svgX = (1 - t) * (1 - t) * 144 + 2 * (1 - t) * t * 142.5 + t * t * 143;
+        const svgY = (1 - t) * (1 - t) * 32 + 2 * (1 - t) * t * 34 + t * t * 36;
 
-        // Geodesic interpolation
-        const lat = 40.6413 + t * (51.4700 - 40.6413);
-        const lon = -73.7781 + t * (-0.4543 - (-73.7781));
+        // Flight geocoding Delhi (28.6139, 77.2090) to Bengaluru (12.9716, 77.5946)
+        const lat = 28.6139 + t * (12.9716 - 28.6139);
+        const lon = 77.2090 + t * (77.5946 - 77.2090);
         
         // Takeoff/Cruise/Landing altitude simulation
-        const alt = t < 0.1 ? 5000 + t * 10 * 33000 : t > 0.9 ? 38000 - (t - 0.9) * 10 * 38000 : 38000;
-        const speed = t < 0.1 ? 260 + t * 10 * 250 : t > 0.9 ? 510 - (t - 0.9) * 10 * 340 : 510; // knots
-        const heading = Math.round(76 + t * 28);
+        const alt = t < 0.1 ? 4000 + t * 10 * 32000 : t > 0.9 ? 36000 - (t - 0.9) * 10 * 36000 : 36000;
+        const speed = t < 0.1 ? 220 + t * 10 * 230 : t > 0.9 ? 450 - (t - 0.9) * 10 * 290 : 450; // knots
+        const heading = Math.round(182 - t * 4); // Southbound heading
         return {
           svgX, svgY, lat, lon, alt, speed, heading,
-          satellites: 12, latency: 42,
-          label: 'JFK-LHR Atlantic Corridor',
-          pathName: 'GREAT-CIRCLE CORRIDOR'
+          satellites: 12, latency: 38,
+          label: 'Air India AI-803 (DEL-BLR)',
+          pathName: 'DOMESTIC FLIGHT PATH'
         };
       }
       case 'SURGEON': {
-        // Surgeon location information is classified and deactivated per HIPAA/security requirements
+        // Surgeon location information at AIIMS New Delhi is classified per privacy requirements
         return {
-          svgX: 96,
-          svgY: 26,
+          svgX: 144,
+          svgY: 32, // New Delhi AIIMS OR-2
           lat: 0,
           lon: 0,
           alt: 0,
@@ -245,7 +251,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
           heading: 0,
           satellites: 0,
           latency: 1.2,
-          label: 'Zurich OR-4 (Encrypted Session)',
+          label: 'AIIMS New Delhi OR-2 (Encrypted)',
           pathName: 'GEOLOCATION RESTRICTED'
         };
       }
@@ -283,34 +289,30 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
         };
       }
       case 'TRUCKER': {
-        // I-80 corridor highway: M 22,30 L 26,32 L 32,29 L 38,28
-        let svgX = 22;
-        let svgY = 30;
-        if (t < 0.33) {
-          const p = t / 0.33;
-          svgX = 22 + p * 4;
-          svgY = 30 + p * 2;
-        } else if (t < 0.66) {
-          const p = (t - 0.33) / 0.33;
-          svgX = 26 + p * 6;
-          svgY = 32 - p * 3;
+        // Mumbai-Pune Express Highway: M 141,34 L 141.5,34.4 L 142,35
+        let svgX = 141;
+        let svgY = 34;
+        if (t < 0.5) {
+          const p = t / 0.5;
+          svgX = 141 + p * 0.5;
+          svgY = 34 + p * 0.4;
         } else {
-          const p = (t - 0.66) / 0.34;
-          svgX = 32 + p * 6;
-          svgY = 29 - p * 1;
+          const p = (t - 0.5) / 0.5;
+          svgX = 141.5 + p * 0.5;
+          svgY = 34.4 + p * 0.6;
         }
 
-        // Reno to SLC coordinates
-        const lat = 39.5296 + t * (40.7608 - 39.5296);
-        const lon = -119.8138 + t * (-111.8910 - (-119.8138));
+        // Mumbai (19.0760, 72.8777) to Pune (18.5204, 73.8567) coordinates
+        const lat = 19.0760 + t * (18.5204 - 19.0760);
+        const lon = 72.8777 + t * (73.8567 - 72.8777);
         
-        const alt = 4520 + Math.sin(t * Math.PI * 2) * 480; // ft mountain passes
-        const speed = 64.5 + Math.sin(t * Math.PI * 10) * 1.5; // mph
+        const alt = 20 + t * 540; // climb ghats up to Pune (~560m)
+        const speed = 62.5 + Math.sin(t * Math.PI * 8) * 1.8; // km/h (express highway heavy cargo)
         return {
-          svgX, svgY, lat, lon, alt, speed, heading: 86,
+          svgX, svgY, lat, lon, alt, speed, heading: 135,
           satellites: 11, latency: 26.5,
-          label: 'Interstate 80 Corridor',
-          pathName: 'HIGHWAY LOGISTICS LINE'
+          label: 'Mumbai-Pune Expressway',
+          pathName: 'LOGISTICS CARRIER LINE'
         };
       }
     }
@@ -478,22 +480,22 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
           {layers.grid && (
             <g stroke="rgba(255,255,255,0.03)" strokeWidth="0.3" fill="none">
               {/* Meridians */}
-              <line x1="20" y1="0" x2="20" y2="100" />
-              <line x1="40" y1="0" x2="40" y2="100" strokeDasharray="1,2" />
-              <line x1="60" y1="0" x2="60" y2="100" />
-              <line x1="80" y1="0" x2="80" y2="100" strokeDasharray="1,2" />
-              <line x1="100" y1="0" x2="100" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" />
-              <line x1="120" y1="0" x2="120" y2="100" strokeDasharray="1,2" />
-              <line x1="140" y1="0" x2="140" y2="100" />
-              <line x1="160" y1="0" x2="160" y2="100" strokeDasharray="1,2" />
-              <line x1="180" y1="0" x2="180" y2="100" />
+              <line x1="20" y1="0" x2="20" y2="100" vectorEffect="non-scaling-stroke" />
+              <line x1="40" y1="0" x2="40" y2="100" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
+              <line x1="60" y1="0" x2="60" y2="100" vectorEffect="non-scaling-stroke" />
+              <line x1="80" y1="0" x2="80" y2="100" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
+              <line x1="100" y1="0" x2="100" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+              <line x1="120" y1="0" x2="120" y2="100" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
+              <line x1="140" y1="0" x2="140" y2="100" vectorEffect="non-scaling-stroke" />
+              <line x1="160" y1="0" x2="160" y2="100" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
+              <line x1="180" y1="0" x2="180" y2="100" vectorEffect="non-scaling-stroke" />
               
               {/* Parallels */}
-              <line x1="0" y1="20" x2="200" y2="20" />
-              <line x1="0" y1="40" x2="200" y2="40" strokeDasharray="1,2" />
-              <line x1="0" y1="50" x2="200" y2="50" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" />
-              <line x1="0" y1="60" x2="200" y2="60" strokeDasharray="1,2" />
-              <line x1="0" y1="80" x2="200" y2="80" />
+              <line x1="0" y1="20" x2="200" y2="20" vectorEffect="non-scaling-stroke" />
+              <line x1="0" y1="40" x2="200" y2="40" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
+              <line x1="0" y1="50" x2="200" y2="50" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+              <line x1="0" y1="60" x2="200" y2="60" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
+              <line x1="0" y1="80" x2="200" y2="80" vectorEffect="non-scaling-stroke" />
             </g>
           )}
 
@@ -501,22 +503,22 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
           {layers.grid && (
             <g stroke="rgba(255,255,255,0.08)" strokeWidth="0.4" fill="none">
               {/* Border rulers */}
-              <rect x="0" y="0" width="200" height="100" />
-              <line x1="20" y1="0" x2="20" y2="1.5" />
-              <line x1="40" y1="0" x2="40" y2="1.5" />
-              <line x1="60" y1="0" x2="60" y2="1.5" />
-              <line x1="80" y1="0" x2="80" y2="1.5" />
-              <line x1="100" y1="0" x2="100" y2="2.5" />
-              <line x1="120" y1="0" x2="120" y2="1.5" />
-              <line x1="140" y1="0" x2="140" y2="1.5" />
-              <line x1="160" y1="0" x2="160" y2="1.5" />
-              <line x1="180" y1="0" x2="180" y2="1.5" />
+              <rect x="0" y="0" width="200" height="100" vectorEffect="non-scaling-stroke" />
+              <line x1="20" y1="0" x2="20" y2="1.5" vectorEffect="non-scaling-stroke" />
+              <line x1="40" y1="0" x2="40" y2="1.5" vectorEffect="non-scaling-stroke" />
+              <line x1="60" y1="0" x2="60" y2="1.5" vectorEffect="non-scaling-stroke" />
+              <line x1="80" y1="0" x2="80" y2="1.5" vectorEffect="non-scaling-stroke" />
+              <line x1="100" y1="0" x2="100" y2="2.5" vectorEffect="non-scaling-stroke" />
+              <line x1="120" y1="0" x2="120" y2="1.5" vectorEffect="non-scaling-stroke" />
+              <line x1="140" y1="0" x2="140" y2="1.5" vectorEffect="non-scaling-stroke" />
+              <line x1="160" y1="0" x2="160" y2="1.5" vectorEffect="non-scaling-stroke" />
+              <line x1="180" y1="0" x2="180" y2="1.5" vectorEffect="non-scaling-stroke" />
 
-              <line x1="0" y1="20" x2="1.5" y2="20" />
-              <line x1="0" y1="40" x2="1.5" y2="40" />
-              <line x1="0" y1="50" x2="2.5" y2="50" />
-              <line x1="0" y1="60" x2="1.5" y2="60" />
-              <line x1="0" y1="80" x2="1.5" y2="80" />
+              <line x1="0" y1="20" x2="1.5" y2="20" vectorEffect="non-scaling-stroke" />
+              <line x1="0" y1="40" x2="1.5" y2="40" vectorEffect="non-scaling-stroke" />
+              <line x1="0" y1="50" x2="2.5" y2="50" vectorEffect="non-scaling-stroke" />
+              <line x1="0" y1="60" x2="1.5" y2="60" vectorEffect="non-scaling-stroke" />
+              <line x1="0" y1="80" x2="1.5" y2="80" vectorEffect="non-scaling-stroke" />
             </g>
           )}
 
@@ -530,6 +532,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
                 strokeWidth="0.45"
                 fill={layers.terrain ? 'url(#landPattern)' : 'rgba(255,255,255,0.01)'}
                 strokeOpacity="0.4"
+                vectorEffect="non-scaling-stroke"
                 className="transition-colors duration-500"
               />
             ))}
@@ -540,7 +543,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
             <g transform={`translate(${gs.svgX}, ${gs.svgY})`}>
               {/* Pulsing beacon target */}
               <polygon points="0,-2.2 2.2,0 0,2.2 -2.2,0" fill={gs.color} opacity="0.95" />
-              <polygon points="0,-4.5 4.5,0 0,4.5 -4.5,0" fill="none" stroke={gs.color} strokeWidth="0.3">
+              <polygon points="0,-4.5 4.5,0 0,4.5 -4.5,0" fill="none" stroke={gs.color} strokeWidth="0.3" vectorEffect="non-scaling-stroke">
                 <animate attributeName="opacity" values="0.8;0.1;0.8" dur="2.2s" repeatCount="indefinite" />
                 <animate attributeName="transform" values="scale(1); scale(1.4); scale(1)" dur="2.2s" repeatCount="indefinite" />
               </polygon>
@@ -572,6 +575,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
                 strokeWidth="0.25" 
                 strokeDasharray="1.2,1.2" 
                 opacity="0.32" 
+                vectorEffect="non-scaling-stroke"
               />
               {/* Traveling telemetry packet dot */}
               <circle r="0.5" fill={themeColor}>
@@ -595,21 +599,23 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
                   strokeWidth="0.75" 
                   strokeDasharray="2,3" 
                   opacity="0.65"
+                  vectorEffect="non-scaling-stroke"
                 />
               )}
               {activeTrackKey === 'PILOT' && (
                 <>
                   <path 
-                    d="M 38,28 Q 62,10 87,24" 
+                    d="M 144,32 Q 142.5,34 143,36" 
                     fill="none" 
                     stroke={themeColor} 
                     strokeWidth="0.75" 
                     strokeDasharray="2,2" 
                     opacity="0.8"
+                    vectorEffect="non-scaling-stroke"
                   />
                   {/* Waypoint beacons */}
-                  <circle cx="38" cy="28" r="1.2" fill={themeColor} opacity="0.6" />
-                  <circle cx="87" cy="24" r="1.2" fill={themeColor} opacity="0.6" />
+                  <circle cx="144" cy="32" r="1.2" fill={themeColor} opacity="0.6" />
+                  <circle cx="143" cy="36" r="1.2" fill={themeColor} opacity="0.6" />
                 </>
               )}
               {activeTrackKey === 'TRAIN_PILOT' && (
@@ -620,15 +626,17 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
                   strokeWidth="0.95" 
                   strokeDasharray="3,1" 
                   opacity="0.8"
+                  vectorEffect="non-scaling-stroke"
                 />
               )}
               {activeTrackKey === 'TRUCKER' && (
                 <path 
-                  d="M 22,30 L 26,32 L 32,29 L 38,28" 
+                  d="M 141,34 L 141.5,34.4 L 142,35" 
                   fill="none" 
                   stroke={themeColor} 
                   strokeWidth="0.75" 
                   opacity="0.7"
+                  vectorEffect="non-scaling-stroke"
                 />
               )}
             </>
@@ -638,7 +646,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
           {pings.map(ping => (
             <g key={ping.id}>
               <circle cx={ping.x} cy={ping.y} r="1.5" fill={C.red} />
-              <circle cx={ping.x} cy={ping.y} r="8" fill="none" stroke={C.red} strokeWidth="0.4">
+              <circle cx={ping.x} cy={ping.y} r="8" fill="none" stroke={C.red} strokeWidth="0.4" vectorEffect="non-scaling-stroke">
                 <animate attributeName="r" values="1;9" dur="1.2s" repeatCount="indefinite" />
                 <animate attributeName="opacity" values="0.95;0" dur="1.2s" repeatCount="indefinite" />
               </circle>
@@ -656,6 +664,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
                 stroke={themeColor} 
                 strokeWidth="0.45" 
                 opacity="0.3" 
+                vectorEffect="non-scaling-stroke"
               />
               <circle 
                 cx={tele.svgX} 
@@ -666,6 +675,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
                 strokeWidth="0.3" 
                 strokeDasharray="1.5,2.5" 
                 opacity="0.2" 
+                vectorEffect="non-scaling-stroke"
               />
             </g>
           )}
@@ -674,7 +684,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
           {activeTrackKey !== 'SURGEON' && (
             <g transform={`translate(${tele.svgX}, ${tele.svgY})`}>
               {/* Concentric pulsing waves */}
-              <circle r="3.5" fill="none" stroke={themeColor} strokeWidth="0.4">
+              <circle r="3.5" fill="none" stroke={themeColor} strokeWidth="0.4" vectorEffect="non-scaling-stroke">
                 <animate attributeName="r" values="1.2;5" dur="1.8s" repeatCount="indefinite" />
                 <animate attributeName="opacity" values="0.85;0" dur="1.8s" repeatCount="indefinite" />
               </circle>
@@ -703,7 +713,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
           <div className="flex justify-between">
             <span className="text-slate-500">LATITUDE</span>
             <span className="font-semibold tabular-nums" style={{ color: activeTrackKey === 'SURGEON' ? C.muted : C.fg }}>
-              {activeTrackKey === 'SURGEON' ? 'RESTRICTED' : `${Math.abs(tele.lat).toFixed(6)}° ${tele.lat >= 0 ? 'N' : 'S'}`}
+              {activeTrackKey === 'SURGEON' ? 'RESTRICTED' : `${Math.abs(tele.lat).toFixed(6)}° {tele.lat >= 0 ? 'N' : 'S'}`}
             </span>
           </div>
           <div className="flex justify-between">
@@ -719,7 +729,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
           <div className="flex justify-between">
             <span className="text-slate-500">LONGITUDE</span>
             <span className="font-semibold tabular-nums" style={{ color: activeTrackKey === 'SURGEON' ? C.muted : C.fg }}>
-              {activeTrackKey === 'SURGEON' ? 'RESTRICTED' : `${Math.abs(tele.lon).toFixed(6)}° ${tele.lon >= 0 ? 'E' : 'W'}`}
+              {activeTrackKey === 'SURGEON' ? 'RESTRICTED' : `${Math.abs(tele.lon).toFixed(6)}° {tele.lon >= 0 ? 'E' : 'W'}`}
             </span>
           </div>
           <div className="flex justify-between">
@@ -774,6 +784,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
     </GlassPanel>
   );
 }
+
 
 
 
