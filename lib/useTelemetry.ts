@@ -119,54 +119,75 @@ export function useTelemetry() {
   }, []);
 
   useEffect(() => {
-    // Instantiate persistent WebSocket connection
-    let wsUrl = '';
-    if (typeof window !== 'undefined') {
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempts = 0;
+    let unmounted = false;
+
+    function getWsUrl() {
+      if (typeof window === 'undefined') return 'ws://localhost:8080';
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      if (process.env.NODE_ENV === 'production') {
-        wsUrl = `${protocol}//${window.location.host}`;
-      } else {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (isLocal) {
         const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
-        wsUrl = `${protocol}//${window.location.hostname}:${port}`;
+        return `${protocol}//${window.location.hostname}:${port}`;
       }
-    } else {
-      wsUrl = 'ws://localhost:8080';
+      return `${protocol}//${window.location.host}`;
     }
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
 
-    ws.onopen = () => {
-      console.log('[Telemetry] WebSocket connected');
-      setConnected(true);
-    };
+    function connect() {
+      if (unmounted) return;
+      const wsUrl = getWsUrl();
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      if (isPausedRef.current) return;
-      try {
-        const payload: TelemetryPayload = JSON.parse(event.data);
-        
-        setIsCrisis(payload.isCrisisActive);
+      ws.onopen = () => {
+        console.log('[Telemetry] WebSocket connected');
+        setConnected(true);
+        reconnectAttempts = 0;
+      };
 
-        setSamples((prev) => {
-          // Keep a rolling window of the last 30 data points
-          const newSamples = [...prev, payload];
-          if (newSamples.length > 30) {
-            return newSamples.slice(newSamples.length - 30);
-          }
-          return newSamples;
-        });
-      } catch (err) {
-        console.error('[Telemetry] Error parsing message', err);
-      }
-    };
+      ws.onmessage = (event) => {
+        if (isPausedRef.current) return;
+        try {
+          const payload: TelemetryPayload = JSON.parse(event.data);
+          setIsCrisis(payload.isCrisisActive);
+          setSamples((prev) => {
+            const newSamples = [...prev, payload];
+            if (newSamples.length > 30) {
+              return newSamples.slice(newSamples.length - 30);
+            }
+            return newSamples;
+          });
+        } catch (err) {
+          console.error('[Telemetry] Error parsing message', err);
+        }
+      };
 
-    ws.onclose = () => {
-      console.log('[Telemetry] WebSocket disconnected');
-      setConnected(false);
-    };
+      ws.onclose = () => {
+        console.log('[Telemetry] WebSocket disconnected');
+        setConnected(false);
+        wsRef.current = null;
+        // Auto-reconnect with exponential backoff (max 10s)
+        if (!unmounted) {
+          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts), 10000);
+          reconnectAttempts++;
+          console.log(`[Telemetry] Reconnecting in ${Math.round(delay)}ms...`);
+          reconnectTimer = setTimeout(connect, delay);
+        }
+      };
+
+      ws.onerror = () => {
+        // onerror is always followed by onclose, so reconnect happens there
+      };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
+      unmounted = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) ws.close();
     };
   }, []);
 

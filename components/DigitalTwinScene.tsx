@@ -1345,11 +1345,12 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
       let wsUrl = '';
       if (typeof window !== 'undefined') {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        if (process.env.NODE_ENV === 'production') {
-          wsUrl = `${protocol}//${window.location.host}/${endpoint}`;
-        } else {
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (isLocal) {
           const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
           wsUrl = `${protocol}//${window.location.hostname}:${port}/${endpoint}`;
+        } else {
+          wsUrl = `${protocol}//${window.location.host}/${endpoint}`;
         }
       } else {
         wsUrl = `ws://localhost:8080/${endpoint}`;

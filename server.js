@@ -613,6 +613,15 @@ function resolveCrisis() {
   addLog('OK', `STABILIZATION PROTOCOL ENGAGED. Normalizing vitals.`);
 }
 
+// Keepalive ping to prevent Cloud Run from closing idle WebSocket connections
+const keepAliveInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.readyState === 1) { // WebSocket.OPEN
+      ws.ping();
+    }
+  });
+}, 25000); // Every 25 seconds
+
 wss.on('connection', (ws, req) => {
   const reqUrl = req.url || '/';
   const urlObj = new URL(reqUrl, 'http://localhost');
