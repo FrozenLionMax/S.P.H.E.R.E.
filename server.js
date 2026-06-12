@@ -13,7 +13,7 @@ const http = require('http');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
 const dev = process.env.NODE_ENV !== 'production';
 const startNext = process.env.NODE_ENV === 'production' || process.env.UNIFIED_SERVER === 'true';
