@@ -83,7 +83,7 @@ const kicadProTemplate = `{
   },
   "project": {
     "title": "S.P.H.E.R.E. Wearable Biosensor",
-    "company": "FrozenLionMax"
+    "company": "Prizzm"
   }
 }`;
 
@@ -92,7 +92,7 @@ const kicadSchTemplate = `(kicad_sch (version 20211123) (generator eeschema)
   (paper "A4")
   (title_block
     (title "S.P.H.E.R.E. Wearable Biosensor Schematic")
-    (company "FrozenLionMax")
+    (company "Prizzm")
     (comment 1 "ESP32 MCU with MAX30102 PPG and MPU6050 IMU")
   )
   (lib_symbols

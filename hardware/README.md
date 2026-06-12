@@ -178,3 +178,24 @@ The hardware casing is divided into two parts, modeled as 3D printable meshes un
 - 📁 **[wearable_firmware/](wearable_firmware/)**: Contains `wearable_firmware.ino` (ESP32 source code).
 - 📁 **[pcb/](pcb/)**: Contains the KiCad project files (`.kicad_pro`, `.kicad_sch`, `.kicad_pcb`).
 - 📁 **[cad/](cad/)**: Contains the snap-fit 3D print enclosure models (`.stl`).
+
+---
+
+## ⚙️ Firmware Setup & Upload
+
+To compile and upload the biosensor software to your physical ESP32 node, execute the following steps:
+
+1. **Install Development IDE**: Download and install the [Arduino IDE v2](https://www.arduino.cc/en/software).
+2. **Configure Board Manager**: Open the IDE Settings and add the ESP32 board manager URL:
+   `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+   Navigate to the Boards Manager and install the **esp32** package.
+3. **Install Required Libraries**: Open the Library Manager and install:
+   - **WebSockets** (by Marcus Sattler)
+   - **ArduinoJson** (by Benoit Blanchon)
+4. **Open the Source Code**: Open [wearable_firmware/wearable_firmware.ino](wearable_firmware/wearable_firmware.ino).
+5. **Set System Configuration**:
+   - Replace the `ssid` and `password` variables with your local Wi-Fi credentials.
+   - Run `ipconfig` (Windows) or `ifconfig` (macOS/Linux) on the host PC running S.P.H.E.R.E.
+   - Change `ws_host` to match your host PC's IPv4 local address.
+6. **Deploy to Microcontroller**: Connect the ESP32 to your PC using a USB data cable, select **ESP32 Dev Module** under the Port menu, and click **Upload** (Arrow icon).
+7. **Connection Verification**: Open the Serial Monitor (115200 Baud). Once Wi-Fi link initializes, it will establish connection. The cockpit's logging terminal will output: `[HW] Biosensor Pack Online. Stream stabilized: HR=74 bpm, SpO2=98.4%`.
