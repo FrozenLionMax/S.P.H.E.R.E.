@@ -93,20 +93,6 @@ A vector-based Electrocardiogram live scanner renders full **P-QRS-T** cardiac c
 
 Audio feedback is synthesized programmatically through the **Web Audio API** — no external media files. Alarm frequencies and victory chimes are generated in real-time.
 
----
-
-### 🎬 60-Second Guided Demo Mode
-
-A fully automated diagnostic simulation that steps through a complete operational lifecycle:
-
-| Time | Phase | Description |
-|------|-------|-------------|
-| 0–10s | **Nominal Baseline** | All metrics green and stable under PILOT profile. |
-| 10–20s | **Anomaly Drift** | Vitals begin drifting; Z-score warning indicators trigger. |
-| 20–30s | **Crisis Override** | Telemetry breaches override thresholds; audio alarms activate. |
-| 30–40s | **Automated Failsafe** | Failsafe interlocks engage (e.g., flight deck auto-GCAS lock). |
-| 40–50s | **Gradual Recovery** | Stabilization protocols engage; vitals begin recovery. |
-| 50–60s | **Resolution** | All systems return to nominal safety baselines. |
 
 ---
 
@@ -153,7 +139,13 @@ S.P.H.E.R.E./
 
 ## 🧬 Theory of Operation & Systems Engineering Standards
 
-S.P.H.E.R.E. is designed to operate as a high-integrity cyberphysical systems platform. The sections below outline the core algorithms, dual-mode telemetry configurations, and signal processing pipelines.
+S.P.H.E.R.E. is designed to operate as a high-integrity cyberphysical systems platform. 
+
+> [!NOTE]
+> **Scope & Manufacturing Status**: 
+> S.P.H.E.R.E. is a software-first cockpit telemetry solution. While the complete cyberphysical roadmap—including working ESP32 firmware, 3D casing STL models, and KiCad PCB schematic design files—is fully engineered and included in the repository, the physical biosensor pack has not been physically manufactured. In future iterations, we will proceed to physically fabricate the wearable node and connect it to the server telemetry pipeline using the provided schematics and firmware.
+
+The sections below outline the core algorithms, dual-mode telemetry configurations, and signal processing pipelines.
 
 ```
                       +-----------------------------+
