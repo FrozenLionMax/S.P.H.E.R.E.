@@ -1,0 +1,12 @@
+(kicad_pcb (version 20211014) (generator pcbnew)
+  (uuid "e0a1b2c3-d4e5-4f6a-8b9c-d0e1f2a3b4c5")
+  (paper "A4")
+  (setup
+    (stackup
+      (layer "F.Cu")
+      (layer "B.Cu")
+    )
+  )
+  (segment (start 100 120) (end 140 100) (width 0.25) (layer "F.Cu") (net 1))
+  (segment (start 100 125) (end 140 150) (width 0.25) (layer "F.Cu") (net 2))
+)

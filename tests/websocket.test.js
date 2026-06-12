@@ -87,6 +87,8 @@ describe('S.P.H.E.R.E. WebSocket Telemetry Server Smoke Tests', () => {
           assert.ok(typeof payload.subsystems === 'object', 'subsystems must be an object');
           assert.ok(Array.isArray(payload.logs), 'logs must be an array');
           assert.ok(typeof payload.trackData === 'object', 'trackData must be an object');
+          assert.ok(typeof payload.healthScore === 'number', 'healthScore must be a number');
+          assert.ok(Array.isArray(payload.warningTriggers), 'warningTriggers must be an array');
 
           client.close();
           resolve();

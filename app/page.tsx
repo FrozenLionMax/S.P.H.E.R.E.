@@ -6,7 +6,7 @@ import { useTelemetry } from '@/lib/useTelemetry';
 import { useRouter } from 'next/navigation';
 
 // Constants & Helpers
-import { C, TRACK_CONFIGS, PROFILE_METRICS, PROFILE_HARDWARE, TrackKey } from '@/lib/constants';
+import { C, TRACK_CONFIGS, PROFILE_METRICS, PROFILE_HARDWARE, TrackKey, HEALTH_SCORE_WEIGHTS, HEALTH_INDEX_BOUNDS } from '@/lib/constants';
 import { fmt, nowTime, classify, pct } from '@/lib/helpers';
 
 // Extracted UI Atoms & Cockpit Widgets
@@ -59,6 +59,7 @@ export default function Page() {
   const selectedOrgan = useTelemetryStore((s) => s.selectedOrgan);
   const setSelectedOrgan = useTelemetryStore((s) => s.setSelectedOrgan);
   const updateTelemetryFrame = useTelemetryStore((s) => s.updateTelemetryFrame);
+  const storeActiveProfile = useTelemetryStore((s) => s.activeUserProfile);
 
   useEffect(() => {
     setMounted(true);
@@ -168,6 +169,14 @@ export default function Page() {
   useEffect(() => {
     useTelemetryStore.getState().setActiveUserProfile(activeTrackKey);
   }, [activeTrackKey]);
+
+  // Sync store activeUserProfile changes back to local activeTrackKey (e.g. from 2D organ click)
+  useEffect(() => {
+    if (storeActiveProfile && storeActiveProfile !== activeTrackKey && storeActiveProfile in TRACK_CONFIGS) {
+      setActiveTrackKey(storeActiveProfile as TrackKey);
+      setTrack(storeActiveProfile as TrackKey);
+    }
+  }, [storeActiveProfile, activeTrackKey, setTrack]);
 
   // Track change handler
   const handleTrackChange = useCallback((key: TrackKey) => {
@@ -399,32 +408,35 @@ export default function Page() {
       ? classify(pressure, 10.1, 8.6, 'lo')
       : classify(pressure, 12.0, 11.0, 'lo');
 
-  const healthScore = Math.round(
-    (pct(spo2, 88, 100) * 0.35) +
-    (100 - pct(hr, 52, 140)) * 0.3 +
-    (100 - pct(envMetric, 0, trackConf.baseEnvVal * 2)) * 0.2 +
-    (100 - pct(lat, 0, 620)) * 0.15
+  const clientHealthScore = Math.round(
+    (pct(spo2, HEALTH_INDEX_BOUNDS.RESPIRATORY.min, HEALTH_INDEX_BOUNDS.RESPIRATORY.max) * HEALTH_SCORE_WEIGHTS.RESPIRATORY) +
+    (100 - pct(hr, HEALTH_INDEX_BOUNDS.CARDIAC.min, HEALTH_INDEX_BOUNDS.CARDIAC.max)) * HEALTH_SCORE_WEIGHTS.CARDIAC +
+    (100 - pct(envMetric, 0, trackConf.baseEnvVal * 2)) * HEALTH_SCORE_WEIGHTS.ENVIRONMENT +
+    (100 - pct(lat, HEALTH_INDEX_BOUNDS.COGNITIVE.min, HEALTH_INDEX_BOUNDS.COGNITIVE.max)) * HEALTH_SCORE_WEIGHTS.COGNITIVE
   );
+
+  const healthScore = last && (last as any).healthScore !== undefined ? (last as any).healthScore : clientHealthScore;
 
   const events = [{ time: clock, label: trackConf.title, color: trackConf.themeColor }];
 
   // Sync live telemetry variables to the 3D hologram's global Zustand store
   useEffect(() => {
     if (last) {
+      const activeTrackData = (last.trackData as any)?.[activeTrackKey] || {};
       updateTelemetryFrame({
         bpm: hr || 72,
         oxygenSaturation: spo2 || 98,
         brainwaveFrequency: activeTrackKey === 'SURGEON'
-          ? (last.tremorFreq || 2.1) * 3.5
+          ? (activeTrackData.tremorFreq || 2.1) * 3.5
           : activeTrackKey === 'TRAIN_PILOT'
-            ? (100 - (last.perclos || 0)) / 6
+            ? (100 - (activeTrackData.perclos || 0)) / 6
             : activeTrackKey === 'TRUCKER'
-              ? (last.alertness ?? 96) / 8
+              ? (activeTrackData.alertness ?? 96) / 8
               : 12.5 + (Math.sin(samples.length * 0.1) * 2),
         glucose: activeTrackKey === 'TRUCKER'
-          ? (last.alertness ?? 96) * 1.25
+          ? (activeTrackData.alertness ?? 96) * 1.25
           : activeTrackKey === 'ASTRONAUT'
-            ? (last.pCO2 ?? 2.5) * 35
+            ? (activeTrackData.pCO2 ?? 2.5) * 35
             : 90 + (Math.sin(samples.length * 0.05) * 15)
       });
     }
@@ -572,7 +584,10 @@ export default function Page() {
                     sublabel={m.sublabel}
                     value={val}
                     unit={m.unit}
-                    history={samples.map((s: any) => s[m.key] as number)}
+                    history={samples.map((s: any) => {
+                      const tData = s.trackData?.[activeTrackKey];
+                      return (tData?.[m.key] !== undefined ? tData[m.key] : (s[m.key] !== undefined ? s[m.key] : 0)) as number;
+                    })}
                     status={statusVal}
                     precision={m.precision}
                     min={m.min}

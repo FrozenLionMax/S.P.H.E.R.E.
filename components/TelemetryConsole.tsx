@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { C, TrackKey, TRACK_CONFIGS, StatusType, STATUS } from '@/lib/constants';
+import { C, TrackKey, TRACK_CONFIGS, StatusType, STATUS, HEALTH_INDEX_BOUNDS } from '@/lib/constants';
 import { fmt } from '@/lib/helpers';
 import { HealthRing } from '@/components/TrackVisualizer';
 import { LogRow, LogEntry } from '@/components/TypewriterLog';
@@ -97,40 +97,156 @@ export default function TelemetryConsole({
           <div className="flex flex-col gap-0.5">
             <div className="flex justify-between items-center text-[7.5px] font-mono">
               <span className="text-slate-400">RESPIRATORY</span>
-              <span style={{ color: STATUS[spo2St] }}>{Math.round(fmt(spo2) === '100.00' ? 100 : (spo2 - 88) / (100 - 88) * 100)}%</span>
+              <span style={{ color: STATUS[spo2St] }}>
+                {Math.round(
+                  fmt(spo2) === '100.00'
+                    ? 100
+                    : ((spo2 - HEALTH_INDEX_BOUNDS.RESPIRATORY.min) /
+                        (HEALTH_INDEX_BOUNDS.RESPIRATORY.max - HEALTH_INDEX_BOUNDS.RESPIRATORY.min)) *
+                        100
+                )}%
+              </span>
             </div>
             <div className="h-1 rounded-full overflow-hidden bg-slate-800">
-              <motion.div className="h-full" style={{ background: STATUS[spo2St] }} animate={{ width: Math.max(0, Math.min(100, ((spo2 - 88) / (100 - 88)) * 100)) + '%' }} transition={{ duration: 0.8 }} />
+              <motion.div
+                className="h-full"
+                style={{ background: STATUS[spo2St] }}
+                animate={{
+                  width:
+                    Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        ((spo2 - HEALTH_INDEX_BOUNDS.RESPIRATORY.min) /
+                          (HEALTH_INDEX_BOUNDS.RESPIRATORY.max - HEALTH_INDEX_BOUNDS.RESPIRATORY.min)) *
+                          100
+                      )
+                    ) + '%'
+                }}
+                transition={{ duration: 0.8 }}
+              />
             </div>
           </div>
 
           <div className="flex flex-col gap-0.5">
             <div className="flex justify-between items-center text-[7.5px] font-mono">
               <span className="text-slate-400">CARDIAC</span>
-              <span style={{ color: STATUS[hrSt] }}>{Math.round(Math.max(0, Math.min(100, (1 - (hr - 52) / (140 - 52)) * 100)))}%</span>
+              <span style={{ color: STATUS[hrSt] }}>
+                {Math.round(
+                  Math.max(
+                    0,
+                    Math.min(
+                      100,
+                      (1 -
+                        (hr - HEALTH_INDEX_BOUNDS.CARDIAC.min) /
+                          (HEALTH_INDEX_BOUNDS.CARDIAC.max - HEALTH_INDEX_BOUNDS.CARDIAC.min)) *
+                        100
+                    )
+                  )
+                )}%
+              </span>
             </div>
             <div className="h-1 rounded-full overflow-hidden bg-slate-800">
-              <motion.div className="h-full" style={{ background: STATUS[hrSt] }} animate={{ width: Math.max(0, Math.min(100, (1 - (hr - 52) / (140 - 52)) * 100)) + '%' }} transition={{ duration: 0.8 }} />
+              <motion.div
+                className="h-full"
+                style={{ background: STATUS[hrSt] }}
+                animate={{
+                  width:
+                    Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        (1 -
+                          (hr - HEALTH_INDEX_BOUNDS.CARDIAC.min) /
+                            (HEALTH_INDEX_BOUNDS.CARDIAC.max - HEALTH_INDEX_BOUNDS.CARDIAC.min)) *
+                          100
+                      )
+                    ) + '%'
+                }}
+                transition={{ duration: 0.8 }}
+              />
             </div>
           </div>
 
           <div className="flex flex-col gap-0.5">
             <div className="flex justify-between items-center text-[7.5px] font-mono">
               <span className="text-slate-400">BODY TEMP</span>
-              <span style={{ color: STATUS[tempSt] }}>{Math.round(Math.max(0, Math.min(100, (1 - Math.max(0, temp - 98.6) / 4) * 100)))}%</span>
+              <span style={{ color: STATUS[tempSt] }}>
+                {Math.round(
+                  Math.max(
+                    0,
+                    Math.min(
+                      100,
+                      (1 -
+                        Math.max(0, temp - HEALTH_INDEX_BOUNDS.TEMPERATURE.nominal) /
+                          HEALTH_INDEX_BOUNDS.TEMPERATURE.maxOffset) *
+                        100
+                    )
+                  )
+                )}%
+              </span>
             </div>
             <div className="h-1 rounded-full overflow-hidden bg-slate-800">
-              <motion.div className="h-full" style={{ background: STATUS[tempSt] }} animate={{ width: Math.max(0, Math.min(100, (1 - Math.max(0, temp - 98.6) / 4) * 100)) + '%' }} transition={{ duration: 0.8 }} />
+              <motion.div
+                className="h-full"
+                style={{ background: STATUS[tempSt] }}
+                animate={{
+                  width:
+                    Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        (1 -
+                          Math.max(0, temp - HEALTH_INDEX_BOUNDS.TEMPERATURE.nominal) /
+                            HEALTH_INDEX_BOUNDS.TEMPERATURE.maxOffset) *
+                          100
+                      )
+                    ) + '%'
+                }}
+                transition={{ duration: 0.8 }}
+              />
             </div>
           </div>
 
           <div className="flex flex-col gap-0.5">
             <div className="flex justify-between items-center text-[7.5px] font-mono">
               <span className="text-slate-400">CABIN PRESSURE</span>
-              <span style={{ color: STATUS[pressureSt] }}>{Math.round(Math.max(0, Math.min(100, (pressure / (activeTrackKey === 'ASTRONAUT' ? 4.3 : 14.7)) * 100)))}%</span>
+              <span style={{ color: STATUS[pressureSt] }}>
+                {Math.round(
+                  Math.max(
+                    0,
+                    Math.min(
+                      100,
+                      (pressure /
+                        (activeTrackKey === 'ASTRONAUT'
+                          ? HEALTH_INDEX_BOUNDS.PRESSURE.ASTRONAUT
+                          : HEALTH_INDEX_BOUNDS.PRESSURE.DEFAULT)) *
+                        100
+                    )
+                  )
+                )}%
+              </span>
             </div>
             <div className="h-1 rounded-full overflow-hidden bg-slate-800">
-              <motion.div className="h-full" style={{ background: STATUS[pressureSt] }} animate={{ width: Math.max(0, Math.min(100, (pressure / (activeTrackKey === 'ASTRONAUT' ? 4.3 : 14.7)) * 100)) + '%' }} transition={{ duration: 0.8 }} />
+              <motion.div
+                className="h-full"
+                style={{ background: STATUS[pressureSt] }}
+                animate={{
+                  width:
+                    Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        (pressure /
+                          (activeTrackKey === 'ASTRONAUT'
+                            ? HEALTH_INDEX_BOUNDS.PRESSURE.ASTRONAUT
+                            : HEALTH_INDEX_BOUNDS.PRESSURE.DEFAULT)) *
+                          100
+                      )
+                    ) + '%'
+                }}
+                transition={{ duration: 0.8 }}
+              />
             </div>
           </div>
         </div>

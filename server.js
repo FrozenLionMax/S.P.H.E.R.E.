@@ -230,11 +230,6 @@ setInterval(() => {
     }
   }
 
-  // Periodic Log Sync (every 10 seconds)
-  syncCounter++;
-  if (syncCounter % 10 === 0) {
-    addLog('SYS', `[SYNC] Telemetry packet ${Math.floor(Math.random() * 9000 + 1000)} logged.`);
-  }
 
   if (state.isCrisisActive) {
     // Deterministic Crisis Degradation for core values
@@ -405,6 +400,55 @@ setInterval(() => {
     }
   }
 
+  const baseEnvVal = state.activeTrack === 'ASTRONAUT' ? 4.3 :
+                     state.activeTrack === 'PILOT' ? 8000 :
+                     state.activeTrack === 'SURGEON' ? 0.02 :
+                     state.activeTrack === 'TRAIN_PILOT' ? 210 : 95;
+                     
+  const pct = (val, min, max) => {
+    if (max === min) return 0;
+    return Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
+  };
+  
+  const healthScore = Math.round(
+    (pct(state.spO2, 88, 100) * 0.35) +
+    (100 - pct(state.heartRate, 52, 140)) * 0.30 +
+    (100 - pct(state.environmentMetric, 0, baseEnvVal * 2)) * 0.20 +
+    (100 - pct(state.cognitiveLatency, 0, 620)) * 0.15
+  );
+
+  const warningTriggers = [];
+  if (state.spO2 < 93) {
+    warningTriggers.push({
+      type: 'RESPIRATORY',
+      status: state.spO2 < 83 ? 'CRITICAL' : 'WARNING',
+      message: `Blood oxygen desaturated: ${state.spO2.toFixed(1)}%`
+    });
+  }
+  if (state.heartRate > 110 || state.heartRate < 52) {
+    warningTriggers.push({
+      type: 'CARDIAC',
+      status: (state.heartRate > 120 || state.heartRate < 50) ? 'CRITICAL' : 'WARNING',
+      message: `Heart rate abnormal: ${Math.round(state.heartRate)} bpm`
+    });
+  }
+  if (state.temperature > 99.5) {
+    warningTriggers.push({
+      type: 'TEMPERATURE',
+      status: state.temperature > 101.0 ? 'CRITICAL' : 'WARNING',
+      message: `Body temp elevated: ${state.temperature.toFixed(1)}°F`
+    });
+  }
+  const isPressureCritical = state.activeTrack === 'ASTRONAUT' ? (state.pressure < 3.8) : (state.pressure < 11.0);
+  const isPressureWarning = state.activeTrack === 'ASTRONAUT' ? (state.pressure < 4.0) : (state.pressure < 12.0);
+  if (isPressureCritical || isPressureWarning) {
+    warningTriggers.push({
+      type: 'PRESSURE',
+      status: isPressureCritical ? 'CRITICAL' : 'WARNING',
+      message: `${state.activeTrack === 'ASTRONAUT' ? 'Suit' : 'Cabin'} pressure anomaly: ${state.pressure.toFixed(2)} psi`
+    });
+  }
+
   // Build Payload with true trackData nesting and simulated properties
   const payload = {
     timestamp: Date.now(),
@@ -414,6 +458,8 @@ setInterval(() => {
     environmentMetric: state.environmentMetric,
     isCrisisActive: state.isCrisisActive,
     activeTrack: state.activeTrack,
+    healthScore,
+    warningTriggers,
 
     // Dynamic simulated metrics
     temperature: state.temperature,
@@ -455,26 +501,6 @@ setInterval(() => {
         alertness: state.alertness,
       } : undefined,
     },
-
-    // Backwards compatibility flat values
-    perclos: state.perclos,
-    microCorrections: state.microCorrections,
-    fatigueIndex: state.fatigueIndex,
-    gForce: state.gForce,
-    pwtt: state.pwtt,
-    spO2Desat: state.spO2Desat,
-    transthoracicImpedance: state.transthoracicImpedance,
-    pCO2: state.pCO2,
-    suitPressure: state.suitPressure,
-    scrubberFlow: state.scrubberFlow,
-    tremorAmplitude: state.tremorAmplitude,
-    eda: state.eda,
-    gripForce: state.gripForce,
-    tremorFreq: state.tremorFreq,
-    hrvRatio: state.hrvRatio,
-    gripAsymmetry: state.gripAsymmetry,
-    v2vLink: state.v2vLink,
-    alertness: state.alertness
   };
 
   const payloadStr = JSON.stringify(payload);
@@ -617,6 +643,37 @@ wss.on('connection', (ws, req) => {
     ws.on('message', (message) => {
       try {
         const parsed = JSON.parse(message);
+
+        if (parsed.type === 'sensor_pack') {
+          ws.isDashboard = false;
+          ws.isHardware = true;
+          
+          if (typeof parsed.heartRate === 'number' && parsed.heartRate > 0) {
+            state.heartRate = parsed.heartRate;
+          }
+          if (typeof parsed.spO2 === 'number' && parsed.spO2 > 0) {
+            state.spO2 = parsed.spO2;
+          }
+          if (state.activeTrack === 'PILOT') {
+            if (typeof parsed.gForce === 'number') {
+              state.gForce = parsed.gForce;
+              state.environmentMetric = parsed.gForce;
+            }
+          }
+          if (state.activeTrack === 'SURGEON') {
+            if (typeof parsed.tremorAmplitude === 'number') {
+              state.tremorAmplitude = parsed.tremorAmplitude;
+              state.environmentMetric = parsed.tremorAmplitude;
+            }
+          }
+
+          const now = Date.now();
+          if (!state.lastHardwareLogTime || now - state.lastHardwareLogTime > 5000) {
+            state.lastHardwareLogTime = now;
+            addLog('SYS', `[HW] Biosensor Pack Online. Stream stabilized: HR=${Math.round(state.heartRate)} bpm, SpO2=${state.spO2}%`);
+          }
+          return;
+        }
         
         if (parsed.type === 'INITIATE_CRISIS') {
           console.log(`[WS] Crisis initiated for track: ${state.activeTrack}`);

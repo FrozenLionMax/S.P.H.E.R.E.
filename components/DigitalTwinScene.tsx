@@ -80,6 +80,16 @@ function MiniSvgWave({ color, speed = 1.0, amplitude = 8, type = 'sine', classNa
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Organ HUD Coordinates Configuration Mapping
+// ─────────────────────────────────────────────────────────────────────────────
+const ORGAN_HUD_CONFIG = {
+  brain: { start: [0, 1.4, 0] as [number, number, number], color: '#c040ff' },
+  lungs: { start: [0.24, 0.5, 0.02] as [number, number, number], color: '#00ccff' },
+  heart: { start: [-0.08, 0.46, 0.09] as [number, number, number], color: '#ff2b56' },
+  liver: { start: [0.13, 0.12, 0.07] as [number, number, number], color: '#ff9900' },
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 3D Bent HUD Pointer Line Component
 // ─────────────────────────────────────────────────────────────────────────────
 function HudPointerLine({ start, mid, end, color, active }: { start: [number, number, number]; mid: [number, number, number]; end: [number, number, number]; color: string; active: boolean }) {
@@ -448,7 +458,7 @@ function AortaTube({ opacity }: { opacity: number }) {
       // Delay the pulse slightly so it starts right after the heart contracts (phase ~0.15)
       float wavePos = (uPulsePhase - 0.1) * 1.5; 
       float dist = abs(uv.x - wavePos);
-      float bulge = exp(-dist * dist * 30.0) * 0.4; // Localized bump
+      float bulge = exp(-dist * dist * 30.0) * 0.01; // Localized bump
       
       // Expand along normal
       transformed += normal * bulge * smoothstep(0.0, 0.1, uv.x); // Don't bulge at the very base
@@ -640,13 +650,16 @@ function CameraController({ controlsRef }: { controlsRef: any }) {
       }
     }
     
-    // Smoothly animate the focal target
-    controlsRef.current.target.lerp(t.target, delta * 3.5)
+    // Smoothly animate the focal target using frame-rate independent exponential decay
+    const lerpFactorPos = 1 - Math.pow(0.02, delta)
+    const lerpFactorY = 1 - Math.pow(0.13, delta)
+
+    controlsRef.current.target.lerp(t.target, lerpFactorPos)
     
     if (isTransitioning.current) {
       if (selectedOrgan !== 'none') {
         // Fly to specific inspection angle
-        camera.position.lerp(t.pos, delta * 3.5)
+        camera.position.lerp(t.pos, lerpFactorPos)
         
         if (camera.position.distanceTo(t.pos) < 0.05) {
           isTransitioning.current = false
@@ -658,9 +671,9 @@ function CameraController({ controlsRef }: { controlsRef: any }) {
         
         const desiredPos = controlsRef.current.target.clone().add(dir.multiplyScalar(3.8))
         // Gently pull the vertical angle back towards the equator (y=0) for a clean spin
-        desiredPos.y = THREE.MathUtils.lerp(desiredPos.y, 0, delta * 2.0)
+        desiredPos.y = THREE.MathUtils.lerp(desiredPos.y, 0, lerpFactorY)
         
-        camera.position.lerp(desiredPos, delta * 3.5)
+        camera.position.lerp(desiredPos, lerpFactorPos)
         
         // Stop forcing the camera once we reach the baseline distance so OrbitControls can zoom freely
         if (camera.position.distanceTo(desiredPos) < 0.05) {
@@ -684,7 +697,6 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
   const brainRing1Ref = useRef<THREE.Mesh>(null)
   const brainRing2Ref = useRef<THREE.Mesh>(null)
   const brainRing3Ref = useRef<THREE.Mesh>(null)
-  const heartWaveMeshRef = useRef<THREE.Mesh>(null)
 
   // Particle References
   const brainPointsRef = useRef<THREE.Points>(null)
@@ -695,7 +707,6 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
   const lungMatRef = useRef<THREE.MeshStandardMaterial>(null)
   const heartMatRef = useRef<THREE.MeshStandardMaterial>(null)
   const liverMatRef = useRef<THREE.MeshStandardMaterial>(null)
-  const heartWaveMatRef = useRef<THREE.MeshBasicMaterial>(null)
 
   // Pre-allocate Color objects outside useFrame to avoid per-frame GC allocations
   const brainColor = useRef(new THREE.Color('#c040ff'))
@@ -838,10 +849,6 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       heartMeshRef.current.scale.set(heartScale, heartScale, heartScale)
     }
 
-    if (heartWaveMeshRef.current) {
-      // The wave mesh is now removed, we handle aorta pulse in AortaTube
-    }
-
     // 2. Lungs Material Updates (Scale and Expansion now handled inside PhysiologicalLung shader)
     const respRate = 12 + (100 - liveOxygen) * 0.8
     const breathDuration = 60 / respRate
@@ -876,10 +883,10 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       brainRing3Ref.current.rotation.y -= delta * 0.9
     }
 
-    // 4. Liver Metabolic Glow
-    let liverScale = 1.0
-    liverScale = 1.0 + Math.sin(elapsed * 3.5) * 0.03
-    liverEmissive = 0.8 + Math.sin(elapsed * 6) * 0.5
+    // 4. Liver Metabolic Glow modulated by live glucose
+    const liveGlucose = telemetry.liveTelemetryFrame.glucose || 95
+    const liverScale = 1.0 + Math.sin(elapsed * 2.2) * 0.02 * (liveGlucose / 120)
+    liverEmissive = 0.6 + Math.sin(elapsed * 4.5) * 0.3 * (liveGlucose / 100)
     if (liverMeshRef.current) {
       liverMeshRef.current.scale.set(liverScale, liverScale, liverScale)
     }
@@ -1124,18 +1131,6 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
           emissiveIntensity={1.0}
           opacity={targetHeartOpacity}
         />
-        {/* Heart ECG Wave Overlay Mesh */}
-        <mesh ref={heartWaveMeshRef} rotation={[0.15, 0, 0.2]}>
-          <torusKnotGeometry args={[0.17, 0.02, 64, 8, 3, 4]} />
-          <meshBasicMaterial
-            ref={heartWaveMatRef}
-            wireframe
-            transparent
-            opacity={0.6 * targetHeartOpacity}
-            color="#ff2b56"
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
       </group>
       
       {/* Pulsing Aorta Arc tube with dynamic traveling bulge */}
@@ -1164,13 +1159,13 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
 
       {/* 9. Glowing Bent 3D HUD Pointers / Leader Lines */}
       {/* Brain Pointer */}
-      <HudPointerLine start={[0, 1.4, 0]} mid={[sideOffset - midXOffset, 1.4, 0]} end={[sideOffset, 1.4, 0]} color="#c040ff" active={true} />
+      <HudPointerLine start={ORGAN_HUD_CONFIG.brain.start} mid={[sideOffset - midXOffset, 1.4, 0]} end={[sideOffset, 1.4, 0]} color={ORGAN_HUD_CONFIG.brain.color} active={true} />
       {/* Lungs Pointer */}
-      <HudPointerLine start={[0.24, 0.5, 0.02]} mid={[sideOffset - midXOffset, 0.5, 0]} end={[sideOffset, 0.5, 0]} color="#00ccff" active={true} />
+      <HudPointerLine start={ORGAN_HUD_CONFIG.lungs.start} mid={[sideOffset - midXOffset, 0.5, 0]} end={[sideOffset, 0.5, 0]} color={ORGAN_HUD_CONFIG.lungs.color} active={true} />
       {/* Heart Pointer */}
-      <HudPointerLine start={[-0.08, 0.46, 0.09]} mid={[-sideOffset + midXOffset, 0.46, 0]} end={[-sideOffset, 0.46, 0]} color="#ff2b56" active={true} />
+      <HudPointerLine start={ORGAN_HUD_CONFIG.heart.start} mid={[-sideOffset + midXOffset, 0.46, 0]} end={[-sideOffset, 0.46, 0]} color={ORGAN_HUD_CONFIG.heart.color} active={true} />
       {/* Liver Pointer */}
-      <HudPointerLine start={[0.13, 0.12, 0.07]} mid={[sideOffset - midXOffset, -0.4, 0]} end={[sideOffset, -0.4, 0]} color="#ff9900" active={true} />
+      <HudPointerLine start={ORGAN_HUD_CONFIG.liver.start} mid={[sideOffset - midXOffset, -0.4, 0]} end={[sideOffset, -0.4, 0]} color={ORGAN_HUD_CONFIG.liver.color} active={true} />
 
       {/* 10. Floating Holographic HUD HTML Cards in 3D Space */}
 
@@ -1348,7 +1343,7 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
     <div className={`w-full h-full relative ${transparent ? 'bg-transparent' : 'bg-[#040806]'}`}>
       <Canvas
         camera={{ position: [0, 0, 3.8], fov: 50 }}
-        gl={{ antialias: true, alpha: transparent }}
+        gl={{ antialias: true, alpha: transparent, preserveDrawingBuffer: true }}
         style={{ background: transparent ? 'transparent' : '#040806' }}
       >
         <ambientLight intensity={0.25} />
@@ -1368,7 +1363,7 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
           dampingFactor={0.08}
           rotateSpeed={0.8}
           maxPolarAngle={Math.PI / 2 + 0.15}
-          minDistance={0.2}
+          minDistance={selectedOrgan === 'none' ? 1.6 : 0.5}
           maxDistance={8.0}
           enablePan={false}
           enableZoom={!transparent}

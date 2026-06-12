@@ -95,6 +95,8 @@ export interface TelemetryPayload {
   // Demo simulation fields
   isDemoActive?: boolean;
   demoTime?: number;
+  healthScore?: number;
+  warningTriggers?: Array<{ type: string; status: string; message: string }>;
 }
 
 export function useTelemetry() {

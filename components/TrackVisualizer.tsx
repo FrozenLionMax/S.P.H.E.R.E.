@@ -416,17 +416,19 @@ interface TrackVisualizerProps {
 export default function TrackVisualizer({ trackKey, crisis, lastSample }: TrackVisualizerProps) {
   if (!lastSample) return null;
 
+  const trackData = lastSample.trackData?.[trackKey] || {};
+
   switch (trackKey) {
     case 'TRAIN_PILOT':
-      return <TrainPilotEyeTracker crisis={crisis} perclos={lastSample.perclos || 0} />;
+      return <TrainPilotEyeTracker crisis={crisis} perclos={trackData.perclos !== undefined ? trackData.perclos : (lastSample.perclos || 0)} />;
     case 'PILOT':
-      return <PilotGForceReticle crisis={crisis} gForce={lastSample.gForce || 1.0} />;
+      return <PilotGForceReticle crisis={crisis} gForce={trackData.gForce !== undefined ? trackData.gForce : (lastSample.gForce || 1.0)} />;
     case 'ASTRONAUT':
-      return <AstronautPressureVent crisis={crisis} pressure={lastSample.suitPressure || 4.3} />;
+      return <AstronautPressureVent crisis={crisis} pressure={trackData.suitPressure !== undefined ? trackData.suitPressure : (lastSample.suitPressure || 4.3)} />;
     case 'SURGEON':
-      return <SurgeonFFTSpectrum crisis={crisis} tremorAmp={lastSample.tremorAmplitude || 0.02} tremorFreq={lastSample.tremorFreq || 2.1} />;
+      return <SurgeonFFTSpectrum crisis={crisis} tremorAmp={trackData.tremorAmplitude !== undefined ? trackData.tremorAmplitude : (lastSample.tremorAmplitude || 0.02)} tremorFreq={trackData.tremorFreq !== undefined ? trackData.tremorFreq : (lastSample.tremorFreq || 2.1)} />;
     case 'TRUCKER':
-      return <TruckerPlatoonGap crisis={crisis} alertness={lastSample.alertness || 96.0} />;
+      return <TruckerPlatoonGap crisis={crisis} alertness={trackData.alertness !== undefined ? trackData.alertness : (lastSample.alertness || 96.0)} />;
     default:
       return null;
   }

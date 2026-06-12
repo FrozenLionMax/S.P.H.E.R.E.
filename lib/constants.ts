@@ -158,3 +158,24 @@ export const PROFILE_HARDWARE = {
     { label: 'V2V Platoon Mesh Antenna', value: 'MESHED' }
   ]
 } as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Health Index Calculation Bounds
+// ─────────────────────────────────────────────────────────────────────────────
+export const HEALTH_INDEX_BOUNDS = {
+  RESPIRATORY: { min: 88, max: 100 },
+  CARDIAC: { min: 52, max: 140 },
+  COGNITIVE: { min: 0, max: 620 },
+  TEMPERATURE: { nominal: 98.6, maxOffset: 4.0 },
+  PRESSURE: {
+    ASTRONAUT: 4.3,
+    DEFAULT: 14.7
+  }
+} as const;
+
+export const HEALTH_SCORE_WEIGHTS = {
+  RESPIRATORY: 0.35,
+  CARDIAC: 0.30,
+  ENVIRONMENT: 0.20,
+  COGNITIVE: 0.15
+} as const;

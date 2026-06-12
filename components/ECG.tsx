@@ -135,16 +135,33 @@ export default function ECG({
       for (let x = 0; x < W; x++) {
         // Fit exactly three full wave beats across the width W
         const p = x / (W / 3);
-        const tInBeat = (p % 1) * beatDurationMs;
+        const absTime = p * beatDurationMs;
         let offset = 0;
-        if (tInBeat <= T_active) {
-          const theta = tInBeat / T_active;
-          offset += gauss(-4.5, 0.20, 0.04, theta); // P
-          offset += gauss(4.0, 0.38, 0.015, theta); // Q
-          offset += gauss(-48.0, 0.42, 0.012, theta); // R
-          offset += gauss(12.0, 0.46, 0.018, theta); // S
-          offset += gauss(-9.0, 0.72, 0.07, theta); // T
-          offset += gauss(-0.8, 0.88, 0.04, theta); // U
+        if (crisis) {
+          // V-Fib chaotic static representation
+          offset = Math.sin(absTime * 0.05) * 14.0 + Math.cos(absTime * 0.12) * 8.0;
+          offset += (Math.sin(absTime * 0.3) + Math.cos(absTime * 0.7)) * 1.5;
+        } else {
+          // Normal static representation but showing a skipped beat in the middle (beat 1 out of 3)
+          const beatIndex = Math.floor(p);
+          const isSkippedBeat = beatIndex % 3 === 1; // skip middle static beat
+          if (!isSkippedBeat) {
+            const tInBeat = (p % 1) * beatDurationMs;
+            if (tInBeat <= T_active) {
+              const theta = tInBeat / T_active;
+              const rAmp = -48.0 * (1 + (bpm - 75) * 0.002);
+              const tAmp = -9.0;
+              const pAmp = -4.5;
+              const sAmp = 12.0;
+
+              offset += gauss(pAmp, 0.20, 0.04, theta); // P
+              offset += gauss(4.0, 0.38, 0.015, theta); // Q
+              offset += gauss(rAmp, 0.42, 0.012, theta); // R
+              offset += gauss(sAmp, 0.46, 0.018, theta); // S
+              offset += gauss(tAmp, 0.72, 0.07, theta); // T
+              offset += gauss(-0.8, 0.88, 0.04, theta); // U
+            }
+          }
         }
         ctx.lineTo(x, midY + offset * ampScale);
       }
@@ -176,28 +193,44 @@ export default function ECG({
       if (scanX >= W) scanX %= W;
 
       const evaluateEcg = (p: number) => {
-        const tInBeat = (p % 1) * beatDurationMs;
+        const absTime = p * beatDurationMs;
+        if (crisis) {
+          // Ventricular Fibrillation (V-Fib): Chaotic multi-sine waves with no distinct QRS peaks
+          const vfib = Math.sin(absTime * 0.05) * 14.0 + Math.cos(absTime * 0.12) * 8.0;
+          const noise = (Math.sin(absTime * 0.3) + Math.cos(absTime * 0.7)) * 1.5;
+          return midY + (vfib + noise) * ampScale;
+        }
+
+        // Otherwise check for skipped beats (e.g. drop 1 out of 6 beats)
+        const beatIndex = Math.floor(p);
+        const isSkippedBeat = beatIndex % 6 === 4;
+        
         let offset = 0;
-        if (tInBeat <= T_active) {
-          const theta = tInBeat / T_active;
-          offset += gauss(-4.5, 0.20, 0.04, theta); // P
-          offset += gauss(4.0, 0.38, 0.015, theta); // Q
-          offset += gauss(-48.0, 0.42, 0.012, theta); // R
-          offset += gauss(12.0, 0.46, 0.018, theta); // S
-          offset += gauss(-9.0, 0.72, 0.07, theta); // T
-          offset += gauss(-0.8, 0.88, 0.04, theta); // U
+        if (!isSkippedBeat) {
+          const tInBeat = (p % 1) * beatDurationMs;
+          if (tInBeat <= T_active) {
+            const theta = tInBeat / T_active;
+            const rAmp = -48.0 * (1 + (bpm - 75) * 0.002);
+            const tAmp = -9.0;
+            const pAmp = -4.5;
+            const sAmp = 12.0;
+
+            offset += gauss(pAmp, 0.20, 0.04, theta); // P
+            offset += gauss(4.0, 0.38, 0.015, theta); // Q
+            offset += gauss(rAmp, 0.42, 0.012, theta); // R
+            offset += gauss(sAmp, 0.46, 0.018, theta); // S
+            offset += gauss(tAmp, 0.72, 0.07, theta); // T
+            offset += gauss(-0.8, 0.88, 0.04, theta); // U
+          }
         }
         offset *= ampScale;
         
-        const absTime = p * beatDurationMs;
         const wander = Math.sin(absTime / 2200) * 2.0 * ampScale;
-        
-        const noiseAmp = crisis ? 1.5 * ampScale : 0.25 * ampScale;
         const noise = (
           Math.sin(absTime * 0.15) * 0.5 + 
           Math.sin(absTime * 0.28) * 0.3 + 
           Math.sin(absTime * 0.45) * 0.2
-        ) * noiseAmp;
+        ) * 0.25 * ampScale;
         
         return midY + offset + wander + noise;
       };
@@ -296,7 +329,7 @@ export default function ECG({
         drawInterval(0, head);
       }
 
-      if (height >= 60) {
+      if (height >= 60 && !crisis) { // Only draw labels if not in V-Fib crisis
         const minPhase = phaseRef.current - (W / sweepSpeed) / beatDurationMs;
         const maxPhase = phaseRef.current;
         const minBeat = Math.ceil(minPhase);
@@ -311,6 +344,9 @@ export default function ECG({
         ];
 
         for (let b = minBeat - 1; b <= maxBeat + 1; b++) {
+          const isSkippedBeat = b % 6 === 4;
+          if (isSkippedBeat) continue; // Skip label drawing on arrhythmia blocks
+
           for (const l of labels) {
             const p = b + (l.relPhase * T_active / beatDurationMs);
             if (p >= minPhase && p <= maxPhase) {
@@ -332,7 +368,7 @@ export default function ECG({
                   
                   ctx.save();
                   ctx.font = 'bold 7.5px var(--font-mono), Courier, monospace';
-                  ctx.fillStyle = crisis ? `rgba(255, 59, 92, ${opacity * 0.85})` : `rgba(0, 255, 170, ${opacity * 0.85})`;
+                  ctx.fillStyle = `rgba(0, 255, 170, ${opacity * 0.85})`;
                   ctx.textAlign = 'center';
                   ctx.shadowBlur = 4 * opacity;
                   ctx.shadowColor = color;
@@ -358,12 +394,14 @@ export default function ECG({
         if (oldT < rWaveTime || newT >= rWaveTime) crossedR = true;
       }
 
-      if (crossedR) {
+      const isCurrentSkipped = !crisis && (newBeats % 6 === 4);
+      if (crossedR && !isCurrentSkipped) { // Mute audio beep trigger during skipped beats
         if (sound && onBeat) onBeat();
         if (sound && audioEnabled && audioCtx) {
           try {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             const gainNode = audioCtx.createGain();
+            const baseFreq = Math.max(300, Math.min(1200, 500 + (bpm - 75) * 4.5));
             
             if (crisis) {
               const duration = 0.09;
@@ -373,16 +411,16 @@ export default function ECG({
 
               const osc1 = audioCtx.createOscillator();
               osc1.type = 'sine';
-              osc1.frequency.setValueAtTime(960, audioCtx.currentTime);
-              osc1.frequency.exponentialRampToValueAtTime(840, audioCtx.currentTime + 0.02);
+              osc1.frequency.setValueAtTime(baseFreq * 1.5, audioCtx.currentTime);
+              osc1.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, audioCtx.currentTime + 0.02);
               osc1.connect(gainNode);
               osc1.start();
               osc1.stop(audioCtx.currentTime + duration);
 
               const osc2 = audioCtx.createOscillator();
               osc2.type = 'sine';
-              osc2.frequency.setValueAtTime(1005, audioCtx.currentTime);
-              osc2.frequency.exponentialRampToValueAtTime(885, audioCtx.currentTime + 0.02);
+              osc2.frequency.setValueAtTime(baseFreq * 1.57, audioCtx.currentTime);
+              osc2.frequency.exponentialRampToValueAtTime(baseFreq * 1.38, audioCtx.currentTime + 0.02);
               osc2.connect(gainNode);
               osc2.start();
               osc2.stop(audioCtx.currentTime + duration);
@@ -394,8 +432,8 @@ export default function ECG({
 
               const osc = audioCtx.createOscillator();
               osc.type = 'sine';
-              osc.frequency.setValueAtTime(640, audioCtx.currentTime);
-              osc.frequency.exponentialRampToValueAtTime(520, audioCtx.currentTime + 0.015);
+              osc.frequency.setValueAtTime(baseFreq, audioCtx.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, audioCtx.currentTime + 0.015);
               osc.connect(gainNode);
               osc.start();
               osc.stop(audioCtx.currentTime + duration);

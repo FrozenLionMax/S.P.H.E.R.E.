@@ -273,6 +273,11 @@ export default function DigitalTwin() {
 
   // Stream data offsets for graphs
   const graphOffsetRef = useRef(0)
+  const ecgBufferRef = useRef<number[] | null>(null)
+  const eegBufferRef = useRef<number[] | null>(null)
+  const respBufferRef = useRef<number[] | null>(null)
+  const writeIndexRef = useRef<number>(0)
+  const lastBeatTimeRef = useRef<number>(Date.now())
 
   // Set local clock time
   useEffect(() => {
@@ -791,12 +796,24 @@ export default function DigitalTwin() {
 
     let animationFrameId: number
     const bufferSize = 800
-    const ecgBuffer = new Array(bufferSize).fill(0)
-    const eegBuffer = new Array(bufferSize).fill(0)
-    const respBuffer = new Array(bufferSize).fill(0)
 
-    let writeIndex = 0
-    let lastBeatTime = Date.now()
+    if (!ecgBufferRef.current) {
+      ecgBufferRef.current = new Array(bufferSize).fill(0)
+    }
+    if (!eegBufferRef.current) {
+      eegBufferRef.current = new Array(bufferSize).fill(0)
+    }
+    if (!respBufferRef.current) {
+      respBufferRef.current = new Array(bufferSize).fill(0)
+    }
+
+    const ecgBuffer = ecgBufferRef.current
+    const eegBuffer = eegBufferRef.current
+    const respBuffer = respBufferRef.current
+
+    let writeIndex = writeIndexRef.current
+    let lastBeatTime = lastBeatTimeRef.current
+
     const updateBuffer = () => {
       // Stream speed adjustments
       const condition = CONDITIONS[activeCondition]
@@ -835,6 +852,7 @@ export default function DigitalTwin() {
       
       if (elapsed >= beatInterval) {
         lastBeatTime = now - (Math.random() * 80) // Jerky random interval offset
+        lastBeatTimeRef.current = lastBeatTime
         playPulseSound(580, 0.09, 0.04)
       }
 
@@ -858,6 +876,7 @@ export default function DigitalTwin() {
       respBuffer[writeIndex] = respVal
 
       writeIndex = (writeIndex + 1) % bufferSize
+      writeIndexRef.current = writeIndex
       graphOffsetRef.current = writeIndex
     }
 

@@ -31,6 +31,7 @@ export default function Anatomical2DScene({
   const trackConf = TRACK_CONFIGS[activeTrackKey];
 
   // Map values
+  const activeTrackData = last.trackData?.[activeTrackKey] || {};
   const hr = last.heartRate ?? 72;
   const spo2 = last.spO2 ?? 98;
   const lat = last.cognitiveLatency ?? 210;
@@ -180,47 +181,66 @@ export default function Anatomical2DScene({
 
         {/* ==================== LEADER LINES ==================== */}
         {/* Brain Line: From head to upper-left */}
-        <path
-          d="M 190 55 L 130 30 L 25 30"
+        <line
+          x1="50%" y1="12.5%" x2="34.21%" y2="6.818%"
           stroke={selectedOrgan === 'brain' ? brainColor : 'rgba(255,255,255,0.15)'}
           strokeWidth={selectedOrgan === 'brain' ? 1.2 : 0.8}
-          fill="none"
           className="transition-colors duration-300"
         />
-        <circle cx="190" cy="55" r="2" fill={brainColor} />
-        <circle cx="25" cy="30" r="2" fill={brainColor} />
+        <line
+          x1="34.21%" y1="6.818%" x2="6.579%" y2="6.818%"
+          stroke={selectedOrgan === 'brain' ? brainColor : 'rgba(255,255,255,0.15)'}
+          strokeWidth={selectedOrgan === 'brain' ? 1.2 : 0.8}
+          className="transition-colors duration-300"
+        />
+        <circle cx="50%" cy="12.5%" r="2" fill={brainColor} />
+        <circle cx="6.579%" cy="6.818%" r="2" fill={brainColor} />
 
         {/* Lungs Line: From lung region to mid-right */}
-        <path
-          d="M 215 145 L 260 100 L 355 100"
+        <line
+          x1="56.579%" y1="32.955%" x2="68.421%" y2="22.727%"
           stroke={selectedOrgan === 'lungs' ? lungsColor : 'rgba(255,255,255,0.15)'}
           strokeWidth={selectedOrgan === 'lungs' ? 1.2 : 0.8}
-          fill="none"
           className="transition-colors duration-300"
         />
-        <circle cx="215" cy="145" r="2" fill={lungsColor} />
-        <circle cx="355" cy="100" r="2" fill={lungsColor} />
+        <line
+          x1="68.421%" y1="22.727%" x2="93.421%" y2="22.727%"
+          stroke={selectedOrgan === 'lungs' ? lungsColor : 'rgba(255,255,255,0.15)'}
+          strokeWidth={selectedOrgan === 'lungs' ? 1.2 : 0.8}
+          className="transition-colors duration-300"
+        />
+        <circle cx="56.579%" cy="32.955%" r="2" fill={lungsColor} />
+        <circle cx="93.421%" cy="22.727%" r="2" fill={lungsColor} />
 
         {/* Heart Line: From heart region to mid-left */}
-        <path
-          d="M 180 135 L 125 185 L 25 185"
+        <line
+          x1="47.368%" y1="30.682%" x2="32.895%" y2="42.045%"
           stroke={selectedOrgan === 'heart' ? heartColor : 'rgba(255,255,255,0.15)'}
           strokeWidth={selectedOrgan === 'heart' ? 1.2 : 0.8}
-          fill="none"
           className="transition-colors duration-300"
         />
-        <circle cx="180" cy="135" r="2" fill={heartColor} />
-        <circle cx="25" cy="185" r="2" fill={heartColor} />
+        <line
+          x1="32.895%" y1="42.045%" x2="6.579%" y2="42.045%"
+          stroke={selectedOrgan === 'heart' ? heartColor : 'rgba(255,255,255,0.15)'}
+          strokeWidth={selectedOrgan === 'heart' ? 1.2 : 0.8}
+          className="transition-colors duration-300"
+        />
+        <circle cx="47.368%" cy="30.682%" r="2" fill={heartColor} />
+        <circle cx="6.579%" cy="42.045%" r="2" fill={heartColor} />
 
         {/* Systemic Line: From lower spine to lower-right */}
-        <path
-          d="M 190 205 L 250 275 L 355 275"
+        <line
+          x1="50%" y1="46.591%" x2="65.789%" y2="62.5%"
           stroke={selectedOrgan === 'none' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.1)'}
           strokeWidth={0.8}
-          fill="none"
         />
-        <circle cx="190" cy="205" r="2" fill={systemicColor} />
-        <circle cx="355" cy="275" r="2" fill={systemicColor} />
+        <line
+          x1="65.789%" y1="62.5%" x2="93.421%" y2="62.5%"
+          stroke={selectedOrgan === 'none' ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.1)'}
+          strokeWidth={0.8}
+        />
+        <circle cx="50%" cy="46.591%" r="2" fill={systemicColor} />
+        <circle cx="93.421%" cy="62.5%" r="2" fill={systemicColor} />
 
 
         {/* ==================== ORGAN INTERACTIVE SHAPES ==================== */}
@@ -248,7 +268,13 @@ export default function Anatomical2DScene({
           r="20"
           fill="transparent"
           className="cursor-pointer"
-          onClick={() => setSelectedOrgan(selectedOrgan === 'brain' ? 'none' : 'brain')}
+          onClick={() => {
+            const next = selectedOrgan === 'brain' ? 'none' : 'brain';
+            setSelectedOrgan(next);
+            if (next === 'brain') {
+              useTelemetryStore.getState().setCurrentCondition('epilepsy');
+            }
+          }}
         />
 
         {/* LUNGS VECTOR SHAPES */}
@@ -284,7 +310,13 @@ export default function Anatomical2DScene({
           ry="18"
           fill="transparent"
           className="cursor-pointer"
-          onClick={() => setSelectedOrgan(selectedOrgan === 'lungs' ? 'none' : 'lungs')}
+          onClick={() => {
+            const next = selectedOrgan === 'lungs' ? 'none' : 'lungs';
+            setSelectedOrgan(next);
+            if (next === 'lungs') {
+              useTelemetryStore.getState().setCurrentCondition('asthma');
+            }
+          }}
         />
 
         {/* HEART STYLIZED SHAPE */}
@@ -319,14 +351,26 @@ export default function Anatomical2DScene({
           r="12"
           fill="transparent"
           className="cursor-pointer"
-          onClick={() => setSelectedOrgan(selectedOrgan === 'heart' ? 'none' : 'heart')}
+          onClick={() => {
+            const next = selectedOrgan === 'heart' ? 'none' : 'heart';
+            setSelectedOrgan(next);
+            if (next === 'heart') {
+              useTelemetryStore.getState().setCurrentCondition('arrhythmia');
+            }
+          }}
         />
       </svg>
 
       {/* ==================== SMALL HUD INFO BOXES ==================== */}
       {/* Upper-Left: BRAIN */}
       <div
-        onClick={() => setSelectedOrgan(selectedOrgan === 'brain' ? 'none' : 'brain')}
+        onClick={() => {
+          const next = selectedOrgan === 'brain' ? 'none' : 'brain';
+          setSelectedOrgan(next);
+          if (next === 'brain') {
+            useTelemetryStore.getState().setCurrentCondition('epilepsy');
+          }
+        }}
         className={`absolute left-2 top-[12px] p-1.5 rounded border text-[8.5px] font-mono w-[105px] bg-black/80 backdrop-blur-md cursor-pointer transition-all duration-300 ${
           selectedOrgan === 'brain'
             ? 'border-white/80 shadow-[0_0_10px_rgba(255,255,255,0.15)] scale-105'
@@ -351,13 +395,13 @@ export default function Anatomical2DScene({
           {activeTrackKey === 'TRAIN_PILOT' && (
             <div className="flex justify-between">
               <span>PERCLOS:</span>
-              <span className="text-white">{fmt(last.perclos ?? 3.5, 1)}%</span>
+              <span className="text-white">{fmt(activeTrackData.perclos ?? 3.5, 1)}%</span>
             </div>
           )}
           {activeTrackKey === 'TRUCKER' && (
             <div className="flex justify-between">
               <span>FOCUS:</span>
-              <span className="text-white">{fmt(last.alertness ?? 96, 1)}%</span>
+              <span className="text-white">{fmt(activeTrackData.alertness ?? 96, 1)}%</span>
             </div>
           )}
           <div className="flex justify-between">
@@ -369,7 +413,13 @@ export default function Anatomical2DScene({
 
       {/* Mid-Left: HEART */}
       <div
-        onClick={() => setSelectedOrgan(selectedOrgan === 'heart' ? 'none' : 'heart')}
+        onClick={() => {
+          const next = selectedOrgan === 'heart' ? 'none' : 'heart';
+          setSelectedOrgan(next);
+          if (next === 'heart') {
+            useTelemetryStore.getState().setCurrentCondition('arrhythmia');
+          }
+        }}
         className={`absolute left-2 top-[165px] p-1.5 rounded border text-[8.5px] font-mono w-[105px] bg-black/80 backdrop-blur-md cursor-pointer transition-all duration-300 ${
           selectedOrgan === 'heart'
             ? 'border-white/80 shadow-[0_0_10px_rgba(255,255,255,0.15)] scale-105'
@@ -391,16 +441,16 @@ export default function Anatomical2DScene({
             <span>HEART RATE:</span>
             <span className="text-white font-bold">{fmt(hr, 0)} BPM</span>
           </div>
-          {last.pwtt !== undefined && (
+          {activeTrackData.pwtt !== undefined && (
             <div className="flex justify-between">
               <span>PWTT:</span>
-              <span className="text-white">{fmt(last.pwtt, 0)} ms</span>
+              <span className="text-white">{fmt(activeTrackData.pwtt, 0)} ms</span>
             </div>
           )}
-          {last.hrvRatio !== undefined && (
+          {activeTrackData.hrvRatio !== undefined && (
             <div className="flex justify-between">
               <span>HRV RATIO:</span>
-              <span className="text-white">{fmt(last.hrvRatio, 2)}</span>
+              <span className="text-white">{fmt(activeTrackData.hrvRatio, 2)}</span>
             </div>
           )}
           <div className="flex justify-between">
@@ -412,7 +462,13 @@ export default function Anatomical2DScene({
 
       {/* Mid-Right: LUNGS */}
       <div
-        onClick={() => setSelectedOrgan(selectedOrgan === 'lungs' ? 'none' : 'lungs')}
+        onClick={() => {
+          const next = selectedOrgan === 'lungs' ? 'none' : 'lungs';
+          setSelectedOrgan(next);
+          if (next === 'lungs') {
+            useTelemetryStore.getState().setCurrentCondition('asthma');
+          }
+        }}
         className={`absolute right-2 top-[82px] p-1.5 rounded border text-[8.5px] font-mono w-[105px] bg-black/80 backdrop-blur-md cursor-pointer transition-all duration-300 ${
           selectedOrgan === 'lungs'
             ? 'border-white/80 shadow-[0_0_10px_rgba(255,255,255,0.15)] scale-105'
@@ -434,16 +490,16 @@ export default function Anatomical2DScene({
             <span>SPO2 SENS:</span>
             <span className="text-white font-bold">{fmt(spo2, 1)}%</span>
           </div>
-          {last.pCO2 !== undefined && (
+          {activeTrackData.pCO2 !== undefined && (
             <div className="flex justify-between">
               <span>pCO2 CAPN:</span>
-              <span className="text-white">{fmt(last.pCO2, 1)} mmHg</span>
+              <span className="text-white">{fmt(activeTrackData.pCO2, 1)} mmHg</span>
             </div>
           )}
-          {last.transthoracicImpedance !== undefined && (
+          {activeTrackData.transthoracicImpedance !== undefined && (
             <div className="flex justify-between">
               <span>RESP VOL:</span>
-              <span className="text-white">{fmt(last.transthoracicImpedance, 1)}%</span>
+              <span className="text-white">{fmt(activeTrackData.transthoracicImpedance, 1)}%</span>
             </div>
           )}
           <div className="flex justify-between">
