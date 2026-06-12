@@ -13,7 +13,7 @@ const http = require('http');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true });
 
 const dev = process.env.NODE_ENV !== 'production';
 const startNext = process.env.NODE_ENV === 'production' || process.env.UNIFIED_SERVER === 'true';
@@ -1044,6 +1044,14 @@ wss.on('connection', (ws, req) => {
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', track: state.activeTrack, crisis: state.isCrisisActive });
+});
+
+// Manual WebSocket upgrade handler — ensures WS connections work
+// alongside Next.js request handling on the same HTTP server
+server.on('upgrade', (req, socket, head) => {
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
 });
 
 const PORT = process.env.NEXT_PUBLIC_WS_PORT || process.env.PORT || 8080;
