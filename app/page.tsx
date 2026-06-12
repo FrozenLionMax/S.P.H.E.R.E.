@@ -159,14 +159,21 @@ export default function Page() {
       const serverTrack = samples[samples.length - 1].activeTrack;
       if (serverTrack && serverTrack !== activeTrackKey && serverTrack in TRACK_CONFIGS) {
         setActiveTrackKey(serverTrack as keyof typeof TRACK_CONFIGS);
+        useTelemetryStore.getState().setActiveUserProfile(serverTrack);
       }
     }
   }, [samples, activeTrackKey]);
+
+  // Sync initial track to store on mount
+  useEffect(() => {
+    useTelemetryStore.getState().setActiveUserProfile(activeTrackKey);
+  }, [activeTrackKey]);
 
   // Track change handler
   const handleTrackChange = useCallback((key: TrackKey) => {
     setActiveTrackKey(key);
     setTrack(key);
+    useTelemetryStore.getState().setActiveUserProfile(key);
   }, [setTrack]);
 
   const handleCaptureScreenshot = useCallback(async () => {

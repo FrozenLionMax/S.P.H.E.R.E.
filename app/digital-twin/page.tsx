@@ -147,7 +147,9 @@ export default function DigitalTwin() {
   const [telemetry, setTelemetry] = useState({
     liveBpm: 72,
     liveSpo2: 98,
-    liveGlucose: 120
+    liveGlucose: 120,
+    liveResp: 16,
+    liveStress: 45
   })
 
   const [anomalies, setAnomalies] = useState({
@@ -162,6 +164,9 @@ export default function DigitalTwin() {
     spo2: [] as number[],
     glucose: [] as number[]
   })
+
+  const lastLoggedEventRef = useRef<string>('')
+  const lastLogTimeRef = useRef<number>(0)
 
   useEffect(() => {
     // Read the query parameter to link the Operator Track to a specific Medical Condition
@@ -178,8 +183,10 @@ export default function DigitalTwin() {
       const bpm = Math.round(state.bpm)
       const spo2 = Math.round(state.oxygenSaturation)
       const glucose = Math.round(state.glucose)
+      const resp = Math.round(state.respiratoryRate ?? (spo2 < 90 ? 24 : bpm > 100 ? 20 : 16))
+      const stress = Math.round(state.stressIndex ?? (bpm > 120 ? 85 : bpm > 100 ? 70 : spo2 < 90 ? 75 : 45))
       
-      setTelemetry({ liveBpm: bpm, liveSpo2: spo2, liveGlucose: glucose })
+      setTelemetry({ liveBpm: bpm, liveSpo2: spo2, liveGlucose: glucose, liveResp: resp, liveStress: stress })
 
       // AI-adjacent Anomaly Detection (Rolling Z-Score)
       const hist = historyRef.current
@@ -201,16 +208,55 @@ export default function DigitalTwin() {
         return zScore > 2.0 // Trigger prediction if drift is > 2.0 std deviations
       }
 
+      const bpmAnomaly = checkAnomaly(hist.bpm, bpm)
+      const spo2Anomaly = checkAnomaly(hist.spo2, spo2)
+      const glucoseAnomaly = checkAnomaly(hist.glucose, glucose)
+
       setAnomalies({
-        bpm: checkAnomaly(hist.bpm, bpm),
-        spo2: checkAnomaly(hist.spo2, spo2),
-        glucose: checkAnomaly(hist.glucose, glucose)
+        bpm: bpmAnomaly,
+        spo2: spo2Anomaly,
+        glucose: glucoseAnomaly
       })
+
+      // Real-time Status Log Engine
+      const now = Date.now()
+      let eventMsg = ''
+
+      if (bpmAnomaly) {
+        eventMsg = `Scanner: High rolling variance on HR channel.`
+      } else if (spo2Anomaly) {
+        eventMsg = `Scanner: Roll-Z anomaly predicted on SpO2 channel.`
+      } else if (glucoseAnomaly) {
+        eventMsg = `Scanner: Unstable trajectory on Glucose channel.`
+      } else if (bpm > 110) {
+        eventMsg = `Alert: Cardiac instability. HR at ${bpm} bpm.`
+      } else if (spo2 < 90) {
+        eventMsg = `Warning: Hypoxia alert. SpO2 at ${spo2}%.`
+      } else if (glucose > 200) {
+        eventMsg = `Alert: Metabolic glycemic spike. Glucose at ${glucose} mg/dL.`
+      } else {
+        if (activeCondition === 'diabetes') {
+          eventMsg = `Nominal: Glucose levels stabilizing.`
+        } else if (activeCondition === 'arrhythmia') {
+          eventMsg = `Nominal: Cardiac pacing stable.`
+        } else if (activeCondition === 'asthma') {
+          eventMsg = `Nominal: Respiration pattern normalized.`
+        } else {
+          eventMsg = `Nominal: Neurological baseline restored.`
+        }
+      }
+
+      if (eventMsg && (eventMsg !== lastLoggedEventRef.current || now - lastLogTimeRef.current > 6000)) {
+        lastLoggedEventRef.current = eventMsg
+        lastLogTimeRef.current = now
+        const infoLog = `Link: Latency ${(Math.random() * 3 + 2).toFixed(1)}ms | Signal ${(98.5 + Math.random() * 1.5).toFixed(1)}%`
+        setTickerLogs(prev => [eventMsg, infoLog, ...prev.slice(0, 8)])
+      }
     }, 500)
     return () => clearInterval(updateUiInterval)
-  }, [])
+  }, [activeCondition])
 
-  const { liveBpm, liveSpo2, liveGlucose } = telemetry
+  const { liveBpm, liveSpo2, liveGlucose, liveResp, liveStress } = telemetry
 
   const [audioEnabled, setAudioEnabled] = useState(false)
   const wireframeMode = useTelemetryStore((s) => s.wireframeMode)
@@ -306,20 +352,7 @@ export default function DigitalTwin() {
     }
   }, [activeCondition, playPulseSound, audioEnabled])
 
-  // Periodic log scanner additions
-  useEffect(() => {
-    const logInterval = setInterval(() => {
-      const newLogs = [
-        `Scanner: Re-evaluating ${CONDITIONS[activeCondition].name} parameters...`,
-        `Link Node: Matrix latency is ${(Math.random() * 5 + 2).toFixed(1)}ms`,
-        `Sensors: Telemetry stream integrity ${(98 + Math.random() * 2).toFixed(2)}%`,
-        `Physical: Temperature grid calibrated at 98.6°F`
-      ]
-      const randomLog = newLogs[Math.floor(Math.random() * newLogs.length)]
-      setTickerLogs(prev => [randomLog, ...prev.slice(0, 9)])
-    }, 6000)
-    return () => clearInterval(logInterval)
-  }, [activeCondition])
+
 
   // 1. HOLOGRAM 3D CANVAS RENDERING
   useEffect(() => {
@@ -520,7 +553,7 @@ export default function DigitalTwin() {
       
       if (activeCondition === 'arrhythmia') {
         // Double pulse peak (erratic ventricular beat)
-        const hz = (condition.bpm / 60) * 2 * Math.PI
+        const hz = ((liveBpm || condition.bpm) / 60) * 2 * Math.PI
         const pulse = Math.sin(Date.now() * 0.012)
         scalePulse = 1.0 + (pulse > 0.6 ? 0.15 : 0) + (Math.random() * 0.02)
       } else if (activeCondition === 'asthma') {
@@ -747,7 +780,7 @@ export default function DigitalTwin() {
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [activeCondition, wireframeMode])
+  }, [activeCondition, wireframeMode, liveBpm])
 
   // 2. BOTTOM GRAPHS: REAL-TIME MULTI-CHANNEL SCROLLING CANVAS
   useEffect(() => {
@@ -770,7 +803,7 @@ export default function DigitalTwin() {
       const now = Date.now()
       
       // Calculate active cardiac duration (R-spike interval)
-      const beatInterval = 60000 / condition.bpm
+      const beatInterval = 60000 / (liveBpm || condition.bpm)
       const elapsed = now - lastBeatTime
       
       let ecgVal = 0
@@ -920,7 +953,7 @@ export default function DigitalTwin() {
     return () => {
       cancelAnimationFrame(animationFrameId)
     }
-  }, [activeCondition, playPulseSound])
+  }, [activeCondition, playPulseSound, liveBpm])
 
   return (
     <div className="min-h-screen bg-[#050807] text-slate-100 font-sans flex flex-col relative overflow-hidden">
@@ -1093,7 +1126,7 @@ export default function DigitalTwin() {
               </div>
               <div className="flex items-baseline gap-1 mt-1">
                 <span className="text-xl font-bold font-mono text-slate-100">
-                  {CONDITIONS[activeCondition].resp}
+                  {liveResp}
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">/MIN</span>
               </div>
@@ -1201,26 +1234,26 @@ export default function DigitalTwin() {
             <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
               <span>NEURAL NODE STRESS INDEX</span>
               <span className={`font-semibold ${
-                CONDITIONS[activeCondition].stress > 70 ? 'text-red-500' :
-                CONDITIONS[activeCondition].stress > 40 ? 'text-amber-500' : 'text-emerald-400'
+                liveStress > 70 ? 'text-red-500' :
+                liveStress > 40 ? 'text-amber-500' : 'text-emerald-400'
               }`}>
-                {CONDITIONS[activeCondition].stress}%
+                {liveStress}%
               </span>
             </div>
             {/* styled bar */}
             <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
               <div 
                 className={`h-full transition-all duration-500 ${
-                  CONDITIONS[activeCondition].stress > 70 ? 'bg-red-500 shadow-[0_0_8px_#ff2b56]' :
-                  CONDITIONS[activeCondition].stress > 40 ? 'bg-amber-500 shadow-[0_0_8px_#f59e0b]' : 'bg-emerald-400 shadow-[0_0_8px_#00ffaa]'
+                  liveStress > 70 ? 'bg-red-500 shadow-[0_0_8px_#ff2b56]' :
+                  liveStress > 40 ? 'bg-amber-500 shadow-[0_0_8px_#f59e0b]' : 'bg-emerald-400 shadow-[0_0_8px_#00ffaa]'
                 }`}
-                style={{ width: `${CONDITIONS[activeCondition].stress}%` }}
+                style={{ width: `${liveStress}%` }}
               ></div>
             </div>
             <span className="text-[8px] font-mono text-slate-500 mt-1">
               Warning threshold activates at 70%. Currently evaluated as {
-                CONDITIONS[activeCondition].stress > 70 ? 'STRESS OVERLOAD' :
-                CONDITIONS[activeCondition].stress > 40 ? 'ELEVATED LOAD' : 'SAFE / CALM'
+                liveStress > 70 ? 'STRESS OVERLOAD' :
+                liveStress > 40 ? 'ELEVATED LOAD' : 'SAFE / CALM'
               }.
             </span>
           </div>

@@ -12,6 +12,8 @@ export interface TelemetryDataFrame {
   brainwaveFrequency: number // EEG speed index in Hz
   glucose: number // Blood glucose in mg/dL
   deviceStatus: 'nominal' | 'warning' | 'critical' | 'offline'
+  respiratoryRate: number
+  stressIndex: number
 }
 
 export type ConditionType = 'general' | 'arrhythmia' | 'asthma' | 'epilepsy' | 'cardiac' | 'respiratory' | 'neurological' | 'diabetes'
@@ -58,7 +60,9 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
     oxygenSaturation: 98,
     brainwaveFrequency: 12.5,
     glucose: 95,
-    deviceStatus: 'nominal'
+    deviceStatus: 'nominal',
+    respiratoryRate: 16,
+    stressIndex: 45
   },
   websocketStatus: 'idle',
   reconnectAttempts: 0,
@@ -68,8 +72,28 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
   customZoomTarget: null,
 
   // --- Setters ---
-  setActiveUserProfile: (profile) => set({ activeUserProfile: profile }),
-  setCurrentCondition: (condition) => set({ currentCondition: condition }),
+  setActiveUserProfile: (profile) => {
+    const trackToConditionMap: Record<string, ConditionType> = {
+      PILOT: 'arrhythmia',
+      ASTRONAUT: 'asthma',
+      SURGEON: 'epilepsy',
+      TRAIN_PILOT: 'diabetes',
+      TRUCKER: 'diabetes'
+    };
+    const condition = trackToConditionMap[profile] || 'diabetes';
+    set({ activeUserProfile: profile, currentCondition: condition });
+  },
+  setCurrentCondition: (condition) => {
+    const conditionToTrackMap: Record<string, string> = {
+      arrhythmia: 'PILOT',
+      asthma: 'ASTRONAUT',
+      epilepsy: 'SURGEON',
+      diabetes: 'TRAIN_PILOT',
+      general: 'PILOT'
+    };
+    const profile = conditionToTrackMap[condition] || 'PILOT';
+    set({ currentCondition: condition, activeUserProfile: profile });
+  },
   setSelectedOrgan: (organ) => set({ selectedOrgan: organ }),
   setIsRotating: (val) => set((s) => ({ isRotating: typeof val === 'function' ? val(s.isRotating) : val })),
   setWireframeMode: (mode) => set({ wireframeMode: mode }),
@@ -128,6 +152,9 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
           const rawGlucose = payload.glucose ?? 120
           const rawStatus = payload.deviceStatus ?? (payload.crisis ? 'critical' : 'nominal')
 
+          const rawResp = payload.respiratoryRate ?? (rawSpo2 < 90 ? 24 : rawBpm > 100 ? 20 : 16)
+          const rawStress = payload.stressIndex ?? payload.stress ?? (rawBpm > 120 ? 85 : rawBpm > 100 ? 70 : rawSpo2 < 90 ? 75 : 45)
+
           // Boundaries clamp: prevent division by zero or NaN values from breaking WebGL coordinates
           const bpm = Math.max(20, Math.min(250, Number(rawBpm) || 72))
           const oxygenSaturation = Math.max(0, Math.min(100, Number(rawSpo2) || 98))
@@ -136,6 +163,8 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
           const deviceStatus = ['nominal', 'warning', 'critical', 'offline'].includes(rawStatus)
             ? rawStatus as TelemetryDataFrame['deviceStatus']
             : 'nominal'
+          const respiratoryRate = Math.max(4, Math.min(60, Number(rawResp) || 16))
+          const stressIndex = Math.max(0, Math.min(100, Number(rawStress) || 45))
 
           // Clean, atomic update trigger
           set({
@@ -144,7 +173,9 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
               oxygenSaturation,
               brainwaveFrequency,
               glucose,
-              deviceStatus
+              deviceStatus,
+              respiratoryRate,
+              stressIndex
             }
           })
         } catch (parseErr) {

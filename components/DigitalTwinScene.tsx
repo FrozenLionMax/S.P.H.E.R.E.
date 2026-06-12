@@ -1319,18 +1319,28 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
 export default function DigitalTwinScene({ transparent = false }: DigitalTwinSceneProps) {
   const orbitRef = useRef<any>(null)
 
+  const currentCondition = useTelemetryStore((s) => s.currentCondition)
+
   useEffect(() => {
     if (!transparent) {
       const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
       const port = process.env.NEXT_PUBLIC_WS_PORT || '8080'
-      const wsUrl = `ws://${host}:${port}/diabetes`
+      const conditionEndpointMap: Record<string, string> = {
+        diabetes: 'diabetes',
+        arrhythmia: 'cardiac',
+        asthma: 'respiratory',
+        epilepsy: 'neurological'
+      }
+      const endpoint = conditionEndpointMap[currentCondition] || 'diabetes'
+      const wsUrl = `ws://${host}:${port}/${endpoint}`
+
       useTelemetryStore.getState().disconnectFromTelemetry()
       useTelemetryStore.getState().connectToTelemetry(wsUrl)
       return () => {
         useTelemetryStore.getState().disconnectFromTelemetry()
       }
     }
-  }, [transparent])
+  }, [transparent, currentCondition])
   const isRotating = useTelemetryStore((s) => s.isRotating)
   const selectedOrgan = useTelemetryStore((s) => s.selectedOrgan)
 

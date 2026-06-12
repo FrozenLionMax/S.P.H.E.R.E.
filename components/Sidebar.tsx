@@ -60,7 +60,11 @@ export default function Sidebar({
         
         {/* Sleek Proceed to 3D Link in Header */}
         <a 
-          href="/digital-twin"
+          href={`/digital-twin?condition=${
+            activeTrackKey === 'PILOT' ? 'arrhythmia' :
+            activeTrackKey === 'ASTRONAUT' ? 'asthma' :
+            activeTrackKey === 'SURGEON' ? 'epilepsy' : 'diabetes'
+          }`}
           className="flex items-center gap-1 px-2 py-0.5 text-[8px] font-mono font-bold tracking-widest uppercase rounded border border-cyan-500/25 bg-cyan-950/20 text-cyan-400 hover:bg-cyan-500/20 hover:text-white transition-all duration-300 shadow-[0_0_8px_rgba(0,212,255,0.06)]"
         >
           3D TWIN ➔
