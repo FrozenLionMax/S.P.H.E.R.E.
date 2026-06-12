@@ -4,6 +4,16 @@ import { useRef, useEffect } from 'react';
 
 export default function LandingBackground({ themeColor = '#00d4ff' }: { themeColor?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rgbRef = useRef('0,212,255');
+
+  // Convert hex color to rgb string once and store in ref to prevent resetting particle loops
+  useEffect(() => {
+    const cleanHex = themeColor.replace('#', '');
+    const r = parseInt(cleanHex.slice(0, 2), 16) || 0;
+    const g = parseInt(cleanHex.slice(2, 4), 16) || 212;
+    const b = parseInt(cleanHex.slice(4, 6), 16) || 255;
+    rgbRef.current = `${r},${g},${b}`;
+  }, [themeColor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -41,19 +51,10 @@ export default function LandingBackground({ themeColor = '#00d4ff' }: { themeCol
     let t = 0;
     let raf: number;
 
-    const hexToRgb = (hex: string) => {
-      // Handle potential formats safely
-      const cleanHex = hex.replace('#', '');
-      const r = parseInt(cleanHex.slice(0, 2), 16) || 0;
-      const g = parseInt(cleanHex.slice(2, 4), 16) || 212;
-      const b = parseInt(cleanHex.slice(4, 6), 16) || 255;
-      return `${r},${g},${b}`;
-    };
-
-    const rgb = hexToRgb(themeColor);
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     const drawStatic = () => {
+      const rgb = rgbRef.current;
       ctx.clearRect(0, 0, width, height);
       // Connections
       for (let i = 0; i < particles.length; i++) {
@@ -82,6 +83,7 @@ export default function LandingBackground({ themeColor = '#00d4ff' }: { themeCol
     };
 
     const draw = () => {
+      const rgb = rgbRef.current;
       ctx.clearRect(0, 0, width, height);
       t += 0.003;
 
@@ -133,7 +135,7 @@ export default function LandingBackground({ themeColor = '#00d4ff' }: { themeCol
       window.removeEventListener('resize', resize);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [themeColor]);
+  }, []);
 
   return (
     <canvas
