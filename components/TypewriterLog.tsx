@@ -74,7 +74,7 @@ export function LogRow({ entry, fresh }: { entry: LogEntry; fresh: boolean }) {
     : {
         initial: fresh ? { opacity: 0, y: 4, filter: 'blur(4px)' } : false,
         animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
-        transition: { duration: 0.3, ease: 'easeOut' }
+        transition: { duration: 0.3, ease: 'easeOut' } as any
       };
 
   return (

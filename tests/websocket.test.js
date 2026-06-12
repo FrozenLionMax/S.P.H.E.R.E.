@@ -13,7 +13,7 @@ try {
   // Silent fallback
 }
 
-const PORT = process.env.NEXT_PUBLIC_WS_PORT || '8080';
+const PORT = process.env.TEST_WS_PORT || '8085';
 
 describe('S.P.H.E.R.E. WebSocket Telemetry Server Smoke Tests', () => {
   let serverProcess;
@@ -82,6 +82,11 @@ describe('S.P.H.E.R.E. WebSocket Telemetry Server Smoke Tests', () => {
           assert.ok(typeof payload.cognitiveLatency === 'number', 'cognitiveLatency must be a number');
           assert.ok(typeof payload.isCrisisActive === 'boolean', 'isCrisisActive must be a boolean');
           assert.ok(typeof payload.activeTrack === 'string', 'activeTrack must be a string');
+          assert.ok(typeof payload.temperature === 'number', 'temperature must be a number');
+          assert.ok(typeof payload.pressure === 'number', 'pressure must be a number');
+          assert.ok(typeof payload.subsystems === 'object', 'subsystems must be an object');
+          assert.ok(Array.isArray(payload.logs), 'logs must be an array');
+          assert.ok(typeof payload.trackData === 'object', 'trackData must be an object');
 
           client.close();
           resolve();

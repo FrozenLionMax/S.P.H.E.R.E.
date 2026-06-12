@@ -23,7 +23,7 @@ export interface TelemetryStoreState {
   liveTelemetryFrame: TelemetryDataFrame
   websocketStatus: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
   reconnectAttempts: number
-  selectedOrgan: 'none' | 'heart' | 'lungs' | 'brain'
+  selectedOrgan: 'none' | 'heart' | 'lungs' | 'brain' | 'custom'
 
   // --- UI Toggles ---
   isRotating: boolean
@@ -34,7 +34,7 @@ export interface TelemetryStoreState {
   disconnectFromTelemetry: () => void
   setActiveUserProfile: (profile: string) => void
   setCurrentCondition: (condition: ConditionType) => void
-  setSelectedOrgan: (organ: 'none' | 'heart' | 'lungs' | 'brain') => void
+  setSelectedOrgan: (organ: 'none' | 'heart' | 'lungs' | 'brain' | 'custom') => void
   setIsRotating: (rotating: boolean | ((prev: boolean) => boolean)) => void
   setWireframeMode: (mode: 'wireframe' | 'dots' | 'solid') => void
   updateTelemetryFrame: (frame: Partial<TelemetryDataFrame>) => void

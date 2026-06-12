@@ -10,7 +10,61 @@ export interface TelemetryPayload {
   isCrisisActive: boolean;
   activeTrack: string;
   
-  // Train Pilot metrics
+  // Server-simulated physical metrics
+  temperature?: number;
+  pressure?: number;
+
+  // Server-simulated subsystem statuses
+  subsystems?: {
+    neuralInterface: 'ONLINE' | 'DEGRADED' | 'CRITICAL';
+    biometricSensors: 'ONLINE' | 'DEGRADED' | 'CRITICAL';
+    telemetryRelay: 'ONLINE' | 'OFFLINE' | 'LATENT';
+    cognitiveProc: 'ONLINE' | 'CRITICAL';
+    atmosMonitor: 'ONLINE' | 'CRITICAL';
+  };
+
+  // Server-provided logs
+  logs?: Array<{
+    id: number;
+    time: string;
+    level: 'INFO' | 'WARN' | 'ALERT' | 'OK' | 'SYS';
+    msg: string;
+  }>;
+
+  // True nested track-specific payload structure
+  trackData?: {
+    ASTRONAUT?: {
+      transthoracicImpedance: number;
+      pCO2: number;
+      suitPressure: number;
+      scrubberFlow: number;
+    };
+    PILOT?: {
+      spO2: number;
+      gForce: number;
+      pwtt: number;
+      spO2Desat: number;
+    };
+    SURGEON?: {
+      tremorAmplitude: number;
+      eda: number;
+      gripForce: number;
+      tremorFreq: number;
+    };
+    TRAIN_PILOT?: {
+      perclos: number;
+      microCorrections: number;
+      fatigueIndex: number;
+    };
+    TRUCKER?: {
+      hrvRatio: number;
+      gripAsymmetry: number;
+      v2vLink: number;
+      alertness: number;
+    };
+  };
+
+  // Train Pilot metrics (flat parameters kept for backwards compatibility)
   perclos?: number;
   microCorrections?: number;
   fatigueIndex?: number;
@@ -37,6 +91,10 @@ export interface TelemetryPayload {
   gripAsymmetry?: number;
   v2vLink?: number;
   alertness?: number;
+
+  // Demo simulation fields
+  isDemoActive?: boolean;
+  demoTime?: number;
 }
 
 export function useTelemetry() {
@@ -124,6 +182,24 @@ export function useTelemetry() {
     }
   }, []);
 
+  const clearLogs = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'CLEAR_LOGS' }));
+    }
+  }, []);
+
+  const startDemo = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'START_DEMO' }));
+    }
+  }, []);
+
+  const stopDemo = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'STOP_DEMO' }));
+    }
+  }, []);
+
   return {
     samples,
     isCrisis,
@@ -133,6 +209,9 @@ export function useTelemetry() {
     triggerCrisisMode,
     resolveCrisisMode,
     setTrack,
-    executeSubsystem
+    executeSubsystem,
+    clearLogs,
+    startDemo,
+    stopDemo
   };
 }

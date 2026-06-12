@@ -34,7 +34,7 @@ export function Gyroscope({ isAstronaut }: { isAstronaut: boolean }) {
     ? {}
     : {
         animate: { rotate: [0, 15, -10, 5, 0], x: [0, 5, -3, 0], y: [0, -4, 2, 0] },
-        transition: { duration: 12, repeat: Infinity, ease: 'easeInOut' }
+        transition: { duration: 12, repeat: Infinity, ease: 'easeInOut' } as any
       };
 
   return (
@@ -140,7 +140,7 @@ export function PilotGForceReticle({ crisis, gForce }: { crisis: boolean; gForce
         boxShadow: gForce > 5 ? '0 0 8px #f59e0b' : '0 0 6px #00d4ff',
       };
 
-  const reticleTransition = reduceMotion
+  const reticleTransition = (reduceMotion
     ? {}
     : crisis
     ? {
@@ -150,7 +150,7 @@ export function PilotGForceReticle({ crisis, gForce }: { crisis: boolean; gForce
     : {
         x: { repeat: Infinity, duration: 3.0, ease: 'easeInOut' },
         y: { duration: 0.3 },
-      };
+      }) as any;
 
   return (
     <div className="flex flex-col items-center gap-1.5 p-2 bg-black/45 border border-white/5 rounded-sm w-full mb-2">
@@ -293,7 +293,7 @@ export function SurgeonFFTSpectrum({ crisis, tremorAmp, tremorFreq }: { crisis: 
                   repeat: Infinity,
                   duration: 0.7 + (i * 0.08) % 0.5,
                   ease: 'easeInOut'
-                }
+                } as any
               };
 
           return (
@@ -339,7 +339,7 @@ export function TruckerPlatoonGap({ crisis, alertness }: { crisis: boolean; aler
         y: 0
       };
 
-  const followerTransition = reduceMotion
+  const followerTransition = (reduceMotion
     ? {}
     : crisis
     ? {
@@ -352,7 +352,7 @@ export function TruckerPlatoonGap({ crisis, alertness }: { crisis: boolean; aler
       }
     : {
         left: { type: 'spring', stiffness: 90, damping: 14 }
-      };
+      }) as any;
 
   return (
     <div className="flex flex-col gap-1.5 p-2 bg-black/45 border border-white/5 rounded-sm w-full mb-2">

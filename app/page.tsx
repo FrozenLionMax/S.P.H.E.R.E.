@@ -43,7 +43,10 @@ export default function Page() {
     triggerCrisisMode,
     resolveCrisisMode,
     setTrack,
-    executeSubsystem
+    executeSubsystem,
+    clearLogs,
+    startDemo: triggerStartDemo,
+    stopDemo: triggerStopDemo
   } = useTelemetry();
 
   const crisis = isCrisis;
@@ -70,9 +73,6 @@ export default function Page() {
   const [crtEnabled, setCrtEnabled] = useState(true);
   const [pulseAudio, setPulseAudio] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [demoActive, setDemoActive] = useState(false);
-  const [demoTime, setDemoTime] = useState(0);
-  const demoIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const triggerAudioPulse = useCallback(() => {
     setPulseAudio(true);
@@ -167,96 +167,7 @@ export default function Page() {
   const handleTrackChange = useCallback((key: TrackKey) => {
     setActiveTrackKey(key);
     setTrack(key);
-    setLocalLogs([{ id: Date.now(), time: nowTime(), level: 'SYS', msg: `[TRACK] Switched to ${TRACK_CONFIGS[key].title}` }]);
-    TRACK_CONFIGS[key].terminalLogs.forEach((msg, i) => {
-      setTimeout(() => {
-        setLocalLogs(p => [...p.slice(-50), { id: Date.now() + i, time: nowTime(), level: 'INFO', msg }]);
-      }, i * 300);
-    });
   }, [setTrack]);
-
-  const stopDemo = useCallback(() => {
-    setDemoActive(false);
-    if (demoIntervalRef.current) {
-      clearInterval(demoIntervalRef.current);
-      demoIntervalRef.current = null;
-    }
-    setLocalLogs(p => [...p.slice(-50), { id: Date.now(), time: nowTime(), level: 'SYS', msg: '[DEMO] Scenario script terminated.' }]);
-  }, []);
-
-  const startDemo = useCallback(() => {
-    if (demoActive) {
-      stopDemo();
-      return;
-    }
-    
-    // Reset states
-    setDemoActive(true);
-    setDemoTime(0);
-    setTrack('PILOT');
-    setActiveTrackKey('PILOT');
-    resolveCrisisMode();
-    
-    // Enable audio context on click if audio is enabled
-    if (audioEnabled && typeof window !== 'undefined') {
-      try {
-        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioCtxClass) {
-          const ctx = audioCtx || new AudioCtxClass();
-          if (ctx.state === 'suspended') {
-            ctx.resume();
-          }
-          setAudioCtx(ctx);
-        }
-      } catch (e) {
-        console.warn("Failed to initialize audio on demo start:", e);
-      }
-    }
-
-    setLocalLogs([{ id: Date.now(), time: nowTime(), level: 'SYS', msg: '--- STARTING S.P.H.E.R.E. SCENARIO DEMO (60s) ---' }]);
-    
-    if (demoIntervalRef.current) {
-      clearInterval(demoIntervalRef.current);
-    }
-    
-    let time = 0;
-    demoIntervalRef.current = setInterval(() => {
-      time += 1;
-      setDemoTime(time);
-      
-      if (time === 1) {
-        setLocalLogs(p => [...p.slice(-50), { id: Date.now() + 1, time: nowTime(), level: 'INFO', msg: '[DEMO] 0-10s: Nominal baseline established on track PILOT. All systems nominal.' }]);
-      } else if (time === 10) {
-        setLocalLogs(p => [...p.slice(-50), { id: Date.now() + 10, time: nowTime(), level: 'WARN', msg: '[DEMO] 10-20s: Subtle anomaly drift detected. Rolling Z-Score alarms active.' }]);
-      } else if (time === 20) {
-        triggerCrisisMode();
-        setLocalLogs(p => [...p.slice(-50), { id: Date.now() + 20, time: nowTime(), level: 'ALERT', msg: '[DEMO] 20-30s: Emergency override thresholds breached. Alarm audio active.' }]);
-      } else if (time === 30) {
-        setLocalLogs(p => [...p.slice(-50), { id: Date.now() + 30, time: nowTime(), level: 'ALERT', msg: '[DEMO] 30-40s: Autopilot auto-override active. Executing emergency descent.' }]);
-      } else if (time === 40) {
-        resolveCrisisMode();
-        setLocalLogs(p => [...p.slice(-50), { id: Date.now() + 40, time: nowTime(), level: 'OK', msg: '[DEMO] 40-50s: Override successful. Gradual recovery active, vitals normalizing.' }]);
-      } else if (time === 50) {
-        setLocalLogs(p => [...p.slice(-50), { id: Date.now() + 50, time: nowTime(), level: 'OK', msg: '[DEMO] 50-60s: All systems nominal. Biometric safety margins restored.' }]);
-        if (audioEnabled) {
-          playSuccessChime();
-        }
-      } else if (time >= 60) {
-        setDemoActive(false);
-        if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
-        setLocalLogs(p => [...p.slice(-50), { id: Date.now() + 60, time: nowTime(), level: 'SYS', msg: '--- S.P.H.E.R.E. SCENARIO DEMO COMPLETED ---' }]);
-      }
-    }, 1000);
-  }, [demoActive, audioEnabled, audioCtx, resolveCrisisMode, triggerCrisisMode, setTrack, stopDemo, playSuccessChime]);
-
-  // Clean up demo interval on unmount
-  useEffect(() => {
-    return () => {
-      if (demoIntervalRef.current) {
-        clearInterval(demoIntervalRef.current);
-      }
-    };
-  }, []);
 
   const handleCaptureScreenshot = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -406,12 +317,6 @@ export default function Page() {
     prevCrisis.current = crisis;
   }, [crisis, trackConf, activeTrackKey]);
 
-  useEffect(() => {
-    if (samples.length > 0 && samples.length % 10 === 0 && !crisis) {
-      setLocalLogs(p => [...p.slice(-50), { id: Date.now(), time: nowTime(), level: 'SYS', msg: `[SYNC] Telemetry packet ${Math.floor(Math.random()*9000+1000)} logged.` }]);
-    }
-  }, [samples.length, crisis]);
-
   const last = samples[samples.length - 1] || {
     spO2: 98, heartRate: 75, environmentMetric: trackConf.baseEnvVal, cognitiveLatency: 210,
     activeTrack: activeTrackKey,
@@ -419,27 +324,62 @@ export default function Page() {
     gForce: 1.0, pwtt: 220, spO2Desat: 0.1,
     transthoracicImpedance: 98.0, pCO2: 2.5, suitPressure: 4.3, scrubberFlow: 6.0,
     tremorAmplitude: 0.02, eda: 1.8, gripForce: 12.0, tremorFreq: 2.1,
-    hrvRatio: 3.2, gripAsymmetry: 2.0, v2vLink: -62, alertness: 96.0
+    hrvRatio: 3.2, gripAsymmetry: 2.0, v2vLink: -62, alertness: 96.0,
+    temperature: 98.6, pressure: 14.7,
+    isDemoActive: false, demoTime: 0
   };
+
+  // Sync localLogs from server telemetry logs
+  useEffect(() => {
+    if (last && last.logs) {
+      setLocalLogs(last.logs);
+    }
+  }, [last.logs]);
+
+  // Demo active and time variables driven by server state
+  const demoActive = last.isDemoActive ?? false;
+  const demoTime = last.demoTime ?? 0;
+
+  const startDemo = useCallback(() => {
+    if (audioEnabled && audioCtx) {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+    }
+    if (demoActive) {
+      triggerStopDemo();
+    } else {
+      triggerStartDemo();
+    }
+  }, [demoActive, audioEnabled, audioCtx, triggerStartDemo, triggerStopDemo]);
+
+  const stopDemo = useCallback(() => {
+    triggerStopDemo();
+  }, [triggerStopDemo]);
 
   const spo2 = last.spO2;
   const hr = last.heartRate;
   const envMetric = last.environmentMetric;
   const lat = last.cognitiveLatency;
   
-  // Dynamic physical simulation for demo fidelity
-  const temp = crisis 
-    ? 98.6 + (hr - 75) * 0.04 
-    : 98.6 + (Math.sin(samples.length * 0.2) * 0.15);
-  
-  const pressure = activeTrackKey === 'ASTRONAUT'
-    ? (last.suitPressure ?? 4.3)
-    : activeTrackKey === 'PILOT'
-      ? (() => {
-          const altitude = last.environmentMetric ?? 8000;
-          return 14.696 * Math.pow(1 - 0.00000687558 * altitude, 5.25588);
-        })()
-      : (14.7 + (Math.sin(samples.length * 0.1) * 0.05) + (crisis ? -0.15 * Math.min(10, samples.length) : 0));
+  // Dynamic physical values ingested directly from the server's telemetry packet
+  const temp = last.temperature ?? 98.6;
+  const pressure = last.pressure ?? (activeTrackKey === 'ASTRONAUT' ? 4.3 : 14.7);
+
+  const subStatus = last.subsystems || {
+    neuralInterface: 'ONLINE',
+    biometricSensors: 'ONLINE',
+    telemetryRelay: 'ONLINE',
+    cognitiveProc: 'ONLINE',
+    atmosMonitor: 'ONLINE'
+  };
+
+  const getSubColor = (status: string) => {
+    if (status === 'ONLINE') return C.green;
+    if (status === 'DEGRADED' || status === 'LATENT') return C.amber;
+    if (status === 'CRITICAL' || status === 'OFFLINE') return C.red;
+    return C.muted;
+  };
 
   const spo2St = classify(spo2, 95, 93, 'lo');
   const hrSt = classify(hr, 110, 120, 'hi');
@@ -609,7 +549,13 @@ export default function Page() {
             {/* Top row metrics cards grid */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {PROFILE_METRICS[activeTrackKey].map((m) => {
-                const val = (last as any)[m.key] !== undefined ? (last as any)[m.key] : 0;
+                const trackDataAny = last.trackData as any;
+                const activeTrackData = trackDataAny?.[activeTrackKey];
+                const val = activeTrackData?.[m.key] !== undefined
+                  ? activeTrackData[m.key]
+                  : (last as any)[m.key] !== undefined
+                    ? (last as any)[m.key]
+                    : 0;
                 const statusVal = classify(val, parseFloat(m.warnAt), parseFloat(m.critAt), m.key === 'spO2' || m.key === 'suitPressure' || m.key === 'alertness' || m.key === 'v2vLink' || m.key === 'gripForce' ? 'lo' : 'hi');
                 const cardOrgan = getOrganForMetricKey(m.key);
                 return (
@@ -741,23 +687,23 @@ export default function Page() {
                     <div className="flex flex-col justify-center gap-2 p-3.5 flex-1">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px]" style={{ color: C.fg }}>Neural Interface</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>{crisis ? 'DEGRADED' : 'ONLINE'}</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: getSubColor(subStatus.neuralInterface) }}>{subStatus.neuralInterface}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px]" style={{ color: C.fg }}>Biometric Sensors</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>{crisis ? 'DEGRADED' : 'ONLINE'}</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: getSubColor(subStatus.biometricSensors) }}>{subStatus.biometricSensors}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px]" style={{ color: C.fg }}>Telemetry Relay</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: !connected ? C.red : crisis ? C.amber : C.green }}>{!connected ? 'OFFLINE' : crisis ? 'LATENT' : 'ONLINE'}</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: !connected ? C.red : getSubColor(subStatus.telemetryRelay) }}>{!connected ? 'OFFLINE' : subStatus.telemetryRelay}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px]" style={{ color: C.fg }}>Cognitive Proc.</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.red : C.green }}>{crisis ? 'CRITICAL' : 'ONLINE'}</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: getSubColor(subStatus.cognitiveProc) }}>{subStatus.cognitiveProc}</span>
                       </div>
                       <div className="flex items-center justify-between border-t border-white/5 pt-1.5 mt-0.5">
                         <span className="text-[10px]" style={{ color: C.fg }}>Atmos Monitor</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: crisis ? C.red : C.green }}>{crisis ? 'CRITICAL' : 'ONLINE'}</span>
+                        <span className="text-[9px] font-mono font-semibold" style={{ color: getSubColor(subStatus.atmosMonitor) }}>{subStatus.atmosMonitor}</span>
                       </div>
                     </div>
                   </GlassPanel>
@@ -778,7 +724,7 @@ export default function Page() {
           startDemo={startDemo}
           handleCaptureScreenshot={handleCaptureScreenshot}
           connected={connected}
-          onClearLogs={() => setLocalLogs([])}
+          onClearLogs={clearLogs}
           last={last}
           temp={temp}
           pressure={pressure}

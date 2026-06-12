@@ -9,6 +9,7 @@ import { AlertTriangle, Heart, Activity, Brain, Shield } from 'lucide-react'
 
 interface DigitalTwinSceneProps {
   transparent?: boolean
+  currentCondition?: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

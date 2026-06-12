@@ -8,9 +8,10 @@ interface GlassPanelProps {
   className?: string;
   style?: React.CSSProperties;
   tilt?: boolean;
+  onClick?: () => void;
 }
 
-export default function GlassPanel({ children, className = '', style = {}, tilt = false }: GlassPanelProps) {
+export default function GlassPanel({ children, className = '', style = {}, tilt = false, onClick }: GlassPanelProps) {
   const ref = useRef<HTMLDivElement>(null);
   const x = useSpring(0, { stiffness: 400, damping: 30 });
   const y = useSpring(0, { stiffness: 400, damping: 30 });
@@ -53,6 +54,7 @@ export default function GlassPanel({ children, className = '', style = {}, tilt 
       ref={ref}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
+      onClick={onClick}
       className={`glass-panel ${activeTilt ? 'glass-panel-tilt' : ''} ${className}`}
       style={{
         ...style,
