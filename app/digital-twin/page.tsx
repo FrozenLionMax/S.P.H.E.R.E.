@@ -262,6 +262,8 @@ export default function DigitalTwin() {
   const [audioEnabled, setAudioEnabled] = useState(false)
   const wireframeMode = useTelemetryStore((s) => s.wireframeMode)
   const setWireframeMode = useTelemetryStore((s) => s.setWireframeMode)
+  const isDemoActive = useTelemetryStore((s) => s.liveTelemetryFrame.isDemoActive)
+  const demoTime = useTelemetryStore((s) => s.liveTelemetryFrame.demoTime)
 
   const [sysTime, setSysTime] = useState('')
   const [tickerLogs, setTickerLogs] = useState<string[]>([])
@@ -1584,6 +1586,144 @@ export default function DigitalTwin() {
           <canvas ref={graphCanvasRef} className="w-full h-full block bg-transparent" />
         </div>
       </section>
+
+      {/* ███ DEMO — BLACK BOX FLIGHT RECORDER POPUP ███ */}
+      <AnimatePresence>
+        {isDemoActive && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] flex items-end justify-center pb-6 pointer-events-none"
+          >
+            <motion.div
+              initial={{ y: 60, opacity: 0, scale: 0.95 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 60, opacity: 0, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+              className="pointer-events-auto w-[420px] max-w-[95vw] rounded-xl border overflow-hidden"
+              style={{
+                background: 'rgba(6, 8, 14, 0.95)',
+                backdropFilter: 'blur(24px) saturate(1.4)',
+                borderColor: demoTime >= 20 && demoTime < 40 ? 'rgba(255,59,92,0.45)' : 'rgba(0,212,255,0.25)',
+                boxShadow: demoTime >= 20 && demoTime < 40 
+                  ? '0 8px 40px rgba(255,59,92,0.2), 0 0 0 1px rgba(255,59,92,0.08)' 
+                  : '0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,212,255,0.06)'
+              }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.35)' }}>
+                <div className="flex items-center gap-2.5">
+                  <motion.div 
+                    className="w-2 h-2 rounded-full"
+                    style={{ background: '#ff3b5c', boxShadow: '0 0 8px rgba(255,59,92,0.6)' }}
+                    animate={{ opacity: [1, 0.15, 1] }}
+                    transition={{ duration: 0.8, repeat: Infinity }}
+                  />
+                  <span className="text-[9px] font-mono font-bold tracking-[0.25em] uppercase" style={{ color: '#ff3b5c' }}>REC</span>
+                  <span className="text-[7px] font-mono tracking-[0.15em] uppercase" style={{ color: 'rgba(255,255,255,0.25)' }}>BLACK BOX RECORDER</span>
+                </div>
+                <span className="text-[10px] font-mono tabular-nums font-bold" style={{ color: '#00d4ff' }}>
+                  T+{String(Math.floor(demoTime / 60)).padStart(2, '0')}:{String(demoTime % 60).padStart(2, '0')}
+                </span>
+              </div>
+
+              {/* Phase Timeline */}
+              <div className="px-4 pt-3 pb-1">
+                <div className="flex items-center gap-[2px]">
+                  {[
+                    { label: 'BASE', start: 0, end: 10, color: '#00d4ff' },
+                    { label: 'DRIFT', start: 10, end: 20, color: '#ff9900' },
+                    { label: 'CRISIS', start: 20, end: 30, color: '#ff3b5c' },
+                    { label: 'OVRD', start: 30, end: 40, color: '#ff3b5c' },
+                    { label: 'RECV', start: 40, end: 50, color: '#00e599' },
+                    { label: 'OK', start: 50, end: 60, color: '#00e599' },
+                  ].map((phase, i) => {
+                    const isActive = demoTime >= phase.start && demoTime < phase.end;
+                    const isPast = demoTime >= phase.end;
+                    return (
+                      <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
+                        <div className="w-full h-[5px] rounded-sm relative overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                          <motion.div
+                            className="h-full rounded-sm"
+                            style={{ background: isPast || isActive ? phase.color : 'transparent', opacity: isPast ? 0.5 : 1 }}
+                            animate={{ width: isActive ? `${((demoTime - phase.start) / (phase.end - phase.start)) * 100}%` : isPast ? '100%' : '0%' }}
+                            transition={{ duration: 0.5 }}
+                          />
+                        </div>
+                        <span className="text-[6px] font-mono tracking-wider uppercase" style={{ 
+                          color: isActive ? phase.color : isPast ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)',
+                          fontWeight: isActive ? 700 : 400
+                        }}>
+                          {phase.label}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Live Event Log */}
+              <div className="px-4 py-2.5">
+                <div className="rounded-lg px-3 py-2.5" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div className="flex items-start gap-2.5">
+                    <motion.div 
+                      className="w-1.5 h-1.5 rounded-full mt-[3px] flex-shrink-0"
+                      style={{ background: demoTime >= 20 && demoTime < 40 ? '#ff3b5c' : '#00d4ff', boxShadow: `0 0 6px ${demoTime >= 20 && demoTime < 40 ? '#ff3b5c' : '#00d4ff'}` }}
+                      animate={{ scale: [1, 1.5, 1] }}
+                      transition={{ duration: 1.0, repeat: Infinity }}
+                    />
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="text-[7px] font-mono tracking-wider uppercase" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                        {demoTime < 10 && 'TELEMETRY INIT'}
+                        {demoTime >= 10 && demoTime < 20 && 'ANOMALY DETECTION'}
+                        {demoTime >= 20 && demoTime < 30 && 'CRISIS PROTOCOL'}
+                        {demoTime >= 30 && demoTime < 40 && 'OVERRIDE ACTIVE'}
+                        {demoTime >= 40 && demoTime < 50 && 'RECOVERY SEQUENCE'}
+                        {demoTime >= 50 && 'MISSION COMPLETE'}
+                      </span>
+                      <span className="text-[9px] font-mono leading-relaxed" style={{ color: demoTime >= 20 && demoTime < 40 ? '#ff3b5c' : 'rgba(255,255,255,0.6)' }}>
+                        {demoTime < 5 && 'Calibrating biosensors... Heart rate locked at 75 BPM.'}
+                        {demoTime >= 5 && demoTime < 10 && 'All channels nominal. SpO₂ 98.2% — streaming baseline.'}
+                        {demoTime >= 10 && demoTime < 15 && 'Z-Score drift on SpO₂ channel: σ = 1.4 → monitoring.'}
+                        {demoTime >= 15 && demoTime < 20 && '⚠ Heart rate trending +12% above rolling mean.'}
+                        {demoTime >= 20 && demoTime < 25 && '⛔ SpO₂ dropped below 83% — Auto-GCAS engaging.'}
+                        {demoTime >= 25 && demoTime < 30 && '⛔ Control stick LOCKED. Emergency pull-up initiated.'}
+                        {demoTime >= 30 && demoTime < 35 && '⛔ Manual controls bypassed. Cabin pressurization max.'}
+                        {demoTime >= 35 && demoTime < 40 && '⛔ Descent at 3000 ft/min. MAYDAY on 121.5 MHz.'}
+                        {demoTime >= 40 && demoTime < 45 && 'Recovery protocol engaged. SpO₂ climbing → 91%.'}
+                        {demoTime >= 45 && demoTime < 50 && 'Heart rate normalizing: 98 → 82 BPM. Disengaging AP.'}
+                        {demoTime >= 50 && demoTime < 55 && '✓ All vitals nominal. Override disengaged.'}
+                        {demoTime >= 55 && '✓ HOMEOSTASIS RESTORED — Black box saved.'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-4 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(0,0,0,0.2)' }}>
+                <span className="text-[7px] font-mono tracking-wider uppercase" style={{ 
+                  color: demoTime >= 20 && demoTime < 40 ? '#ff3b5c' : '#00e599' 
+                }}>
+                  {demoTime < 10 && '● NOMINAL'}
+                  {demoTime >= 10 && demoTime < 20 && '● DRIFT DETECTED'}
+                  {demoTime >= 20 && demoTime < 40 && '● CRITICAL — OVERRIDE'}
+                  {demoTime >= 40 && demoTime < 50 && '● RECOVERING'}
+                  {demoTime >= 50 && '● ALL SYSTEMS GO'}
+                </span>
+                <button
+                  onClick={() => useTelemetryStore.getState().stopDemo()}
+                  className="px-3 py-1 text-[8px] font-mono font-bold tracking-[0.15em] uppercase rounded-md cursor-pointer select-none transition-all hover:brightness-125"
+                  style={{ background: 'rgba(255,59,92,0.12)', color: '#ff3b5c', border: '1px solid rgba(255,59,92,0.25)' }}
+                >
+                  ■ STOP REC
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   )

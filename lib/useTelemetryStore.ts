@@ -15,6 +15,8 @@ export interface TelemetryDataFrame {
   respiratoryRate: number
   stressIndex: number
   isCrisisActive: boolean
+  isDemoActive: boolean
+  demoTime: number
 }
 
 export type ConditionType = 'general' | 'arrhythmia' | 'asthma' | 'epilepsy' | 'cardiac' | 'respiratory' | 'neurological' | 'diabetes'
@@ -45,6 +47,8 @@ export interface TelemetryStoreState {
   setCustomZoomTarget: (target: { pos: number[], target: number[] } | null) => void
   triggerCrisis: () => void
   resolveCrisis: () => void
+  startDemo: () => void
+  stopDemo: () => void
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +70,9 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
     deviceStatus: 'nominal',
     respiratoryRate: 16,
     stressIndex: 45,
-    isCrisisActive: false
+    isCrisisActive: false,
+    isDemoActive: false,
+    demoTime: 0
   },
   websocketStatus: 'idle',
   reconnectAttempts: 0,
@@ -117,6 +123,16 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
   resolveCrisis: () => {
     if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
       socketInstance.send(JSON.stringify({ type: 'RESOLVE_CRISIS' }))
+    }
+  },
+  startDemo: () => {
+    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
+      socketInstance.send(JSON.stringify({ type: 'START_DEMO' }))
+    }
+  },
+  stopDemo: () => {
+    if (socketInstance && socketInstance.readyState === WebSocket.OPEN) {
+      socketInstance.send(JSON.stringify({ type: 'STOP_DEMO' }))
     }
   },
 
@@ -191,7 +207,9 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
               deviceStatus,
               respiratoryRate,
               stressIndex,
-              isCrisisActive
+              isCrisisActive,
+              isDemoActive: payload.isDemoActive === true,
+              demoTime: Number(payload.demoTime) || 0
             }
           })
         } catch (parseErr) {
