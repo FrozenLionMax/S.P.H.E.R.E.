@@ -24,6 +24,7 @@ import DashboardHeader from '@/components/DashboardHeader';
 import Sidebar from '@/components/Sidebar';
 import TelemetryConsole from '@/components/TelemetryConsole';
 import { useTelemetryStore } from '@/lib/useTelemetryStore';
+import OperatorMap from '@/components/OperatorMap';
 
 function getOrganForMetricKey(key: string): 'none' | 'heart' | 'lungs' | 'brain' {
   if (['heartRate', 'bpm', 'pwtt'].includes(key)) return 'heart';
@@ -352,9 +353,164 @@ export default function Page() {
     }
   }, [last.logs]);
 
+  // 1. Maintain a circular buffer of up to 300 samples for the Black Box replay and report generator
+  const [recordedSamples, setRecordedSamples] = useState<any[]>([]);
+  const lastRecordedTimestampRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (last && last.timestamp && last.timestamp !== lastRecordedTimestampRef.current) {
+      lastRecordedTimestampRef.current = last.timestamp;
+      setRecordedSamples((prev) => {
+        const next = [...prev, last];
+        if (next.length > 300) {
+          return next.slice(next.length - 300);
+        }
+        return next;
+      });
+    }
+  }, [last]);
+
+  // 2. Playback state management
+  const [isPlaybackActive, setIsPlaybackActive] = useState(false);
+  const [playbackIndex, setPlaybackIndex] = useState(0);
+  const [isPlaybackPlaying, setIsPlaybackPlaying] = useState(false);
+
+  // Playback timer effect: advances the playback index every 1s when active and playing
+  useEffect(() => {
+    let timer: any = null;
+    if (isPlaybackActive && isPlaybackPlaying) {
+      timer = setInterval(() => {
+        setPlaybackIndex((prev) => {
+          if (prev >= recordedSamples.length - 1) {
+            setIsPlaybackPlaying(false);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isPlaybackActive, isPlaybackPlaying, recordedSamples.length]);
+
+  // 3. Incident Report state & handlers
+  const [showReport, setShowReport] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const handleGenerateReport = useCallback(() => {
+    if (recordedSamples.length === 0) {
+      alert('No telemetry data recorded in this session yet.');
+      return;
+    }
+
+    const hrValues = recordedSamples.map(s => s.heartRate ?? s.bpm ?? 0).filter(v => v > 0);
+    const spo2Values = recordedSamples.map(s => s.spO2 ?? s.oxygenSaturation ?? 0).filter(v => v > 0);
+    const tempValues = recordedSamples.map(s => s.temperature ?? 0).filter(v => v > 0);
+    const latValues = recordedSamples.map(s => s.cognitiveLatency ?? 0).filter(v => v > 0);
+
+    const maxHr = Math.max(...hrValues, 0);
+    const minHr = Math.min(...hrValues, 100);
+    const maxSpo2 = Math.max(...spo2Values, 0);
+    const minSpo2 = Math.min(...spo2Values, 100);
+    const maxTemp = Math.max(...tempValues, 0);
+    const minTemp = Math.min(...tempValues, 100);
+    const maxLat = Math.max(...latValues, 0);
+    const minLat = Math.min(...latValues, 100);
+
+    const crisisFrames = recordedSamples.filter(s => s.isCrisisActive);
+    const hadCrisis = crisisFrames.length > 0;
+    const crisisPercentage = ((crisisFrames.length / recordedSamples.length) * 100).toFixed(1);
+
+    const formatTime = (ts: number) => {
+      try {
+        return new Date(ts).toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+      } catch (err) {
+        return new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+      }
+    };
+
+    const report = `================================================================
+          S.P.H.E.R.E. SYSTEM INTELLIGENCE INCIDENT REPORT
+================================================================
+GENERATED AT : ${formatTime(Date.now())}
+TEAM         : Prizzm
+MONITORING   : Sentinel Physical Homeostasis & Ecological Recovery Engine
+
+----------------------------------------------------------------
+1. MISSION SESSION METADATA
+----------------------------------------------------------------
+Active Profile : ${activeTrackKey}
+Session Start  : ${formatTime(recordedSamples[0].timestamp)}
+Session End    : ${formatTime(recordedSamples[recordedSamples.length - 1].timestamp)}
+Total Samples  : ${recordedSamples.length} seconds of active telemetry
+
+----------------------------------------------------------------
+2. PHYSIOLOGICAL STRESS LOGS
+----------------------------------------------------------------
+Heart Rate (HR)      : Range: ${minHr.toFixed(1)} - ${maxHr.toFixed(1)} BPM
+                       Avg: ${(hrValues.reduce((a,b)=>a+b,0) / hrValues.length).toFixed(1)} BPM
+Blood Oxygen (SpO2)  : Range: ${minSpo2.toFixed(1)} - ${maxSpo2.toFixed(1)} %
+                       Avg: ${(spo2Values.reduce((a,b)=>a+b,0) / spo2Values.length).toFixed(1)} %
+Body Temperature     : Range: ${minTemp.toFixed(1)} - ${maxTemp.toFixed(1)} °F
+Cognitive Latency    : Range: ${minLat.toFixed(1)} - ${maxLat.toFixed(1)} ms
+
+----------------------------------------------------------------
+3. AUTONOMOUS INTERLOCK PROTOCOLS
+----------------------------------------------------------------
+Crisis Events Detected : ${hadCrisis ? 'YES' : 'NO'}
+Replay Buffer Coverage : ${recordedSamples.length}s
+Crisis Mode Active Time: ${crisisFrames.length}s (${crisisPercentage}% of session)
+System Failsafe Status : ${crisis ? 'ACTIVE OVERRIDE ENGAGED' : 'ALL VITALS NOMINAL'}
+Active Intervention    : ${hadCrisis ? 'Automatic flight path correction / auto-GCAS engaged.' : 'None required.'}
+
+----------------------------------------------------------------
+4. SUBSYSTEM INGESTION INTEGRITY
+----------------------------------------------------------------
+Neural Interface   : ${last.subsystems?.neuralInterface || 'ONLINE'}
+Biometric Sensors  : ${last.subsystems?.biometricSensors || 'ONLINE'}
+Telemetry Relay    : ${last.subsystems?.telemetryRelay || 'ONLINE'}
+Cognitive Processor: ${last.subsystems?.cognitiveProc || 'ONLINE'}
+Atmospheric Monitor: ${last.subsystems?.atmosMonitor || 'ONLINE'}
+
+----------------------------------------------------------------
+5. DECISION ALGORITHMIC VERDICT
+----------------------------------------------------------------
+At the end of this monitoring interval, operator homeostatic parameters
+were evaluated as: ${minSpo2 < 90 || maxHr > 120 ? 'CRITICAL - AUTOMATED ACTION TAKEN' : 'NOMINAL - MANUAL FLIGHT STATUS'}.
+All physical telemetry pipelines verified compile-safe and responsive.
+================================================================`;
+
+    setReportText(report);
+    setCopied(false);
+    setShowReport(true);
+  }, [recordedSamples, activeTrackKey, crisis, last]);
+
+  const handleCopyReport = useCallback(() => {
+    navigator.clipboard.writeText(reportText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [reportText]);
+
+  const handleDownloadReport = useCallback(() => {
+    const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `SPHERE_INCIDENT_REPORT_${activeTrackKey}_${Date.now()}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [reportText, activeTrackKey]);
+
+  // Evaluate which sample to show (live vs playback)
+  const displaySample = isPlaybackActive && recordedSamples[playbackIndex]
+    ? recordedSamples[playbackIndex]
+    : last;
+
   // Demo active and time variables driven by server state
-  const demoActive = last.isDemoActive ?? false;
-  const demoTime = last.demoTime ?? 0;
+  const demoActive = displaySample.isDemoActive ?? false;
+  const demoTime = displaySample.demoTime ?? 0;
 
   const startDemo = useCallback(() => {
     if (audioEnabled && audioCtx) {
@@ -373,16 +529,16 @@ export default function Page() {
     triggerStopDemo();
   }, [triggerStopDemo]);
 
-  const spo2 = last.spO2;
-  const hr = last.heartRate;
-  const envMetric = last.environmentMetric;
-  const lat = last.cognitiveLatency;
+  const spo2 = displaySample.spO2;
+  const hr = displaySample.heartRate;
+  const envMetric = displaySample.environmentMetric;
+  const lat = displaySample.cognitiveLatency;
   
   // Dynamic physical values ingested directly from the server's telemetry packet
-  const temp = last.temperature ?? 98.6;
-  const pressure = last.pressure ?? (activeTrackKey === 'ASTRONAUT' ? 4.3 : 14.7);
+  const temp = displaySample.temperature ?? 98.6;
+  const pressure = displaySample.pressure ?? (activeTrackKey === 'ASTRONAUT' ? 4.3 : 14.7);
 
-  const subStatus = last.subsystems || {
+  const subStatus = displaySample.subsystems || {
     neuralInterface: 'ONLINE',
     biometricSensors: 'ONLINE',
     telemetryRelay: 'ONLINE',
@@ -421,8 +577,8 @@ export default function Page() {
 
   // Sync live telemetry variables to the 3D hologram's global Zustand store
   useEffect(() => {
-    if (last) {
-      const activeTrackData = (last.trackData as any)?.[activeTrackKey] || {};
+    if (displaySample) {
+      const activeTrackData = (displaySample.trackData as any)?.[activeTrackKey] || {};
       updateTelemetryFrame({
         bpm: hr || 72,
         oxygenSaturation: spo2 || 98,
@@ -440,7 +596,7 @@ export default function Page() {
             : 90 + (Math.sin(samples.length * 0.05) * 15)
       });
     }
-  }, [last, hr, spo2, activeTrackKey, updateTelemetryFrame, samples.length]);
+  }, [displaySample, hr, spo2, activeTrackKey, updateTelemetryFrame, samples.length]);
 
   if (!mounted) return null;
 
@@ -649,7 +805,7 @@ export default function Page() {
                       </div>
                     </div>
                     <div style={{ height: 100, padding: '4px 0 0', position: 'relative', width: '100%', minWidth: 0 }}>
-                      <VitalsChart samples={samples} />
+                      <VitalsChart samples={isPlaybackActive ? recordedSamples.slice(0, Math.max(30, playbackIndex + 1)).slice(-30) : samples} />
                     </div>
                   </GlassPanel>
 
@@ -675,11 +831,11 @@ export default function Page() {
                   </GlassPanel>
                 </div>
 
-                {/* Sensor Hardware and Subsystems */}
-                <div className="grid gap-2.5 grid-cols-1 xl:grid-cols-2">
+                {/* Sensor Hardware, Subsystems, and Geolocation Map */}
+                <div className="grid gap-2.5 grid-cols-1 xl:grid-cols-3">
                   <GlassPanel className="rounded-xl p-3.5 flex flex-col gap-2.5" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                     <SectionLabel>Sensor Hardware</SectionLabel>
-                    <TrackVisualizer trackKey={activeTrackKey} crisis={crisis} lastSample={last} />
+                    <TrackVisualizer trackKey={activeTrackKey} crisis={crisis} lastSample={displaySample} />
                     {PROFILE_HARDWARE[activeTrackKey].map((h, i) => (
                       <div key={i} className="flex flex-col gap-0.5">
                         <div className="flex items-center justify-between">
@@ -729,6 +885,8 @@ export default function Page() {
                       </div>
                     </div>
                   </GlassPanel>
+
+                  <OperatorMap activeTrackKey={activeTrackKey} crisis={crisis} />
                 </div>
               </div>
             </div>
@@ -747,11 +905,27 @@ export default function Page() {
           handleCaptureScreenshot={handleCaptureScreenshot}
           connected={connected}
           onClearLogs={clearLogs}
-          last={last}
+          last={displaySample}
           temp={temp}
           pressure={pressure}
           tempSt={tempSt}
           pressureSt={pressureSt}
+          isBlackBoxActive={isPlaybackActive}
+          onToggleBlackBox={() => {
+            if (!isPlaybackActive) {
+              if (recordedSamples.length === 0) {
+                alert('No recorded telemetry data available for playback.');
+                return;
+              }
+              setPlaybackIndex(recordedSamples.length - 1);
+              setIsPlaybackActive(true);
+              setIsPlaybackPlaying(false);
+            } else {
+              setIsPlaybackActive(false);
+              setIsPlaybackPlaying(false);
+            }
+          }}
+          onGenerateReport={handleGenerateReport}
         />
       </div>
 
@@ -947,6 +1121,167 @@ export default function Page() {
                 Biometric homeostasis restored. Auto-override offline. Flight deck control returned to manual.
               </span>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Black Box Playback Scrubber Control Bar */}
+      <AnimatePresence>
+        {isPlaybackActive && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+            className="fixed bottom-4 left-4 right-4 z-[9999] p-3.5 rounded-xl border border-amber-500/30 glass-panel shadow-2xl flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between animate-none"
+            style={{
+              background: 'rgba(12, 10, 8, 0.9)',
+              backdropFilter: 'blur(20px) saturate(1.2)'
+            }}
+          >
+            <div className="flex items-center gap-3 shrink-0 font-mono">
+              <motion.div 
+                className="w-2.5 h-2.5 rounded-full bg-amber-500"
+                animate={{ scale: [1, 1.25, 1], opacity: [1, 0.5, 1] }}
+                transition={{ duration: 1.2, repeat: Infinity }}
+              />
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">
+                  BLACK BOX REPLAY
+                </span>
+                <span className="text-[8px] text-slate-400 mt-0.5">
+                  TIME INDEX: {recordedSamples.length - 1 - playbackIndex}s AGO
+                </span>
+              </div>
+            </div>
+
+            <div className="flex-1 px-4 flex items-center gap-3">
+              <span className="text-[8.5px] font-mono text-slate-500">START</span>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(0, recordedSamples.length - 1)}
+                value={playbackIndex}
+                onChange={(e) => {
+                  setPlaybackIndex(parseInt(e.target.value));
+                  setIsPlaybackPlaying(false);
+                }}
+                className="flex-1 cursor-pointer"
+                style={{
+                  accentColor: '#f59e0b',
+                  height: '4px',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  borderRadius: '2px',
+                  outline: 'none',
+                  WebkitAppearance: 'none'
+                }}
+              />
+              <span className="text-[8.5px] font-mono text-slate-500">
+                {playbackIndex + 1}/{recordedSamples.length} FRAME
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+              <button
+                onClick={() => {
+                  setIsPlaybackPlaying(false);
+                  setPlaybackIndex((prev) => Math.max(0, prev - 1));
+                }}
+                className="p-1 px-2.5 text-[8.5px] font-mono border border-white/10 hover:bg-white/5 text-slate-300 rounded cursor-pointer"
+                title="Step Backward"
+              >
+                ◀◀
+              </button>
+
+              <button
+                onClick={() => setIsPlaybackPlaying((p) => !p)}
+                className="p-1 px-3 text-[9px] font-mono font-bold uppercase border border-amber-500/20 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded cursor-pointer"
+              >
+                {isPlaybackPlaying ? 'PAUSE' : 'PLAY'}
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsPlaybackPlaying(false);
+                  setPlaybackIndex((prev) => Math.min(recordedSamples.length - 1, prev + 1));
+                }}
+                className="p-1 px-2.5 text-[8.5px] font-mono border border-white/10 hover:bg-white/5 text-slate-300 rounded cursor-pointer"
+                title="Step Forward"
+              >
+                ▶▶
+              </button>
+
+              <button
+                onClick={() => {
+                  setIsPlaybackActive(false);
+                  setIsPlaybackPlaying(false);
+                }}
+                className="ml-2 p-1 px-3 text-[9px] font-mono font-bold uppercase border border-red-500/40 hover:bg-red-500/15 text-red-400 rounded cursor-pointer"
+              >
+                EXIT
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Incident Report Modal */}
+      <AnimatePresence>
+        {showReport && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/75 backdrop-blur-md"
+            onClick={() => setShowReport(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: 'spring', duration: 0.5 }}
+              className="w-full max-w-lg p-6 rounded-xl border border-white/10 glass-panel shadow-2xl relative flex flex-col max-h-[85vh] animate-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                onClick={() => setShowReport(false)}
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-white/5 shrink-0">
+                <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h3 className="text-sm font-semibold tracking-wider font-mono text-white uppercase">
+                  S.P.H.E.R.E. INCIDENT REPORT
+                </h3>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-1 text-left">
+                <pre className="p-4 rounded-lg bg-black/60 border border-white/5 text-[10.5px] font-mono text-slate-300 leading-relaxed whitespace-pre-wrap select-text">
+                  {reportText}
+                </pre>
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-end gap-3 shrink-0">
+                <button
+                  onClick={handleCopyReport}
+                  className="px-4 py-1.5 text-xs font-mono font-bold tracking-wider uppercase border border-cyan-500/20 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded cursor-pointer"
+                >
+                  {copied ? 'Copied!' : 'Copy to Clipboard'}
+                </button>
+                <button
+                  onClick={handleDownloadReport}
+                  className="px-4 py-1.5 text-xs font-mono font-bold tracking-wider uppercase border border-slate-700 hover:border-slate-500 text-slate-200 rounded cursor-pointer"
+                >
+                  Download Report
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

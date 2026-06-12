@@ -25,6 +25,11 @@ interface SidebarProps {
   pressure: number;
   tempSt: StatusType;
   pressureSt: StatusType;
+
+  // New Analytics props
+  isBlackBoxActive: boolean;
+  onToggleBlackBox: () => void;
+  onGenerateReport: () => void;
 }
 
 export default function Sidebar({
@@ -41,7 +46,10 @@ export default function Sidebar({
   temp,
   pressure,
   tempSt,
-  pressureSt
+  pressureSt,
+  isBlackBoxActive,
+  onToggleBlackBox,
+  onGenerateReport
 }: SidebarProps) {
   return (
     <motion.aside
@@ -134,6 +142,19 @@ export default function Sidebar({
           </Btn>
           <Btn onClick={handleCaptureScreenshot} ariaLabel="Capture dashboard screenshot" color={C.cyan} className="px-1 text-[7.5px]">
             CAPTURE
+          </Btn>
+        </div>
+
+        {/* Row 3: System Analytics (2 columns) */}
+        <div className="flex items-center justify-between mt-3.5 mb-1.5">
+          <SectionLabel>System Analytics</SectionLabel>
+        </div>
+        <div className="grid grid-cols-2 gap-1">
+          <Btn onClick={onToggleBlackBox} disabled={demoActive} ariaLabel="Toggle session playback" color={isBlackBoxActive ? C.amber : C.muted} className="px-1 text-[7.5px]">
+            {isBlackBoxActive ? 'LIVE STREAM' : 'BLACK BOX'}
+          </Btn>
+          <Btn onClick={onGenerateReport} ariaLabel="Generate session incident report" color={C.cyan} className="px-1 text-[7.5px]">
+            GEN REPORT
           </Btn>
         </div>
       </div>
