@@ -11,6 +11,7 @@ interface BtnProps {
   style?: React.CSSProperties;
   disabled?: boolean;
   ariaLabel?: string;
+  title?: string;
 }
 
 export default function Btn({
@@ -21,7 +22,8 @@ export default function Btn({
   className = '',
   style = {},
   disabled = false,
-  ariaLabel
+  ariaLabel,
+  title
 }: BtnProps) {
   return (
     <motion.button
@@ -50,6 +52,7 @@ export default function Btn({
       aria-label={ariaLabel}
       aria-pressed={active}
       role="button"
+      title={title}
     >
       {children}
     </motion.button>

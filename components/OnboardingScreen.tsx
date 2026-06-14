@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import LandingBackground from '@/components/LandingBackground';
 import ScrambleText from '@/components/ui/ScrambleText';
 import Magnetic from '@/components/ui/Magnetic';
-import { TRACK_CONFIGS, PROFILE_HARDWARE, TrackKey } from '@/lib/constants';
+import { TRACK_CONFIGS, PROFILE_SENSORS, TrackKey } from '@/lib/constants';
 
 interface OnboardingScreenProps {
   activeTrackKey: TrackKey;
@@ -141,7 +141,7 @@ export default function OnboardingScreen({
           variants={animContainer}
           initial="hidden"
           animate="show"
-          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 w-full mb-8"
+          className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 w-full mb-8"
         >
           {(Object.keys(TRACK_CONFIGS) as Array<TrackKey>).map((k) => {
             const config = TRACK_CONFIGS[k];
@@ -192,12 +192,12 @@ export default function OnboardingScreen({
                     </p>
                     
                     <div className="flex flex-wrap gap-1 mt-2.5">
-                      {PROFILE_HARDWARE[k].map((hw, idx) => (
+                      {PROFILE_SENSORS[k].map((sensor, idx) => (
                         <span
                           key={idx}
                           className="text-[8px] font-mono px-1.5 py-0.5 rounded-full border border-slate-800/60 text-slate-400 bg-slate-900/10"
                         >
-                          {hw.label}
+                          {sensor.label}
                         </span>
                       ))}
                     </div>

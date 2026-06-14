@@ -1,6 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
+import { getSessionId, getCommandUrl, sendCommand } from '@/lib/api'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Interfaces & Types
@@ -28,7 +29,7 @@ export interface TelemetryStoreState {
   liveTelemetryFrame: TelemetryDataFrame
   websocketStatus: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
   reconnectAttempts: number
-  selectedOrgan: 'none' | 'heart' | 'lungs' | 'brain' | 'custom'
+  selectedOrgan: 'none' | 'heart' | 'lungs' | 'brain' | 'liver' | 'custom'
 
   // --- UI Toggles ---
   isRotating: boolean
@@ -39,7 +40,7 @@ export interface TelemetryStoreState {
   disconnectFromTelemetry: () => void
   setActiveUserProfile: (profile: string) => void
   setCurrentCondition: (condition: ConditionType) => void
-  setSelectedOrgan: (organ: 'none' | 'heart' | 'lungs' | 'brain' | 'custom') => void
+  setSelectedOrgan: (organ: 'none' | 'heart' | 'lungs' | 'brain' | 'liver' | 'custom') => void
   setIsRotating: (rotating: boolean | ((prev: boolean) => boolean)) => void
   setWireframeMode: (mode: 'wireframe' | 'dots' | 'solid') => void
   updateTelemetryFrame: (frame: Partial<TelemetryDataFrame>) => void
@@ -51,44 +52,7 @@ export interface TelemetryStoreState {
   stopDemo: () => void
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: Send command to server via HTTP POST
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Session ID — shared with useTelemetry.ts via sessionStorage
-function getSessionId(): string {
-  if (typeof window === 'undefined') return 'server'
-  let id = sessionStorage.getItem('sphere_session_id')
-  if (!id) {
-    id = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-    sessionStorage.setItem('sphere_session_id', id)
-  }
-  return id
-}
-
-function getCommandUrl(): string {
-  if (typeof window === 'undefined') return 'http://localhost:8080/api/command'
-  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  if (isLocal) {
-    const port = process.env.NEXT_PUBLIC_WS_PORT || '8080'
-    return `${window.location.protocol}//${window.location.hostname}:${port}/api/command`
-  }
-  return `${window.location.protocol}//${window.location.host}/api/command`
-}
-
-async function sendCommand(body: Record<string, unknown>): Promise<void> {
-  try {
-    await fetch(getCommandUrl(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...body, sessionId: getSessionId() }),
-    })
-  } catch (err) {
-    console.error('[TelemetryStore] Failed to send command:', err)
-  }
-}
+// API utilities (getSessionId, getCommandUrl, sendCommand) imported from @/lib/api
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Resilient Global Telemetry Zustand Store (SSE-based)
@@ -132,15 +96,7 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
     set({ activeUserProfile: profile, currentCondition: condition });
   },
   setCurrentCondition: (condition) => {
-    const conditionToTrackMap: Record<string, string> = {
-      arrhythmia: 'PILOT',
-      asthma: 'ASTRONAUT',
-      epilepsy: 'SURGEON',
-      diabetes: 'TRAIN_PILOT',
-      general: 'PILOT'
-    };
-    const profile = conditionToTrackMap[condition] || 'PILOT';
-    set({ currentCondition: condition, activeUserProfile: profile });
+    set({ currentCondition: condition });
   },
   setSelectedOrgan: (organ) => set({ selectedOrgan: organ }),
   setIsRotating: (val) => set((s) => ({ isRotating: typeof val === 'function' ? val(s.isRotating) : val })),
@@ -172,13 +128,13 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
   connectToTelemetry: (streamUrl) => {
     // 1. Avoid duplicate connections
     if (eventSourceInstance && eventSourceInstance.readyState !== EventSource.CLOSED) {
-      console.log('[TelemetryStore] SSE stream already active. Skipping connection attempt.')
+      // SSE stream already active — skip
       return
     }
 
     // Clean up any existing instance
     if (eventSourceInstance) {
-      console.log('[TelemetryStore] Cleaning up previous EventSource instance.')
+      // Clean up previous EventSource
       eventSourceInstance.close()
       eventSourceInstance = null
     }
@@ -187,7 +143,7 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
     // Append session ID so simulation streams share the same session as dashboard
     const separator = streamUrl.includes('?') ? '&' : '?'
     const fullUrl = `${streamUrl}${separator}session=${getSessionId()}`
-    console.log(`[TelemetryStore] Spawning SSE connection to: ${fullUrl}`)
+    // Spawning SSE connection
 
     try {
       const es = new EventSource(fullUrl)
@@ -199,7 +155,7 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
           console.warn('[TelemetryStore] onopen event ignored from orphaned EventSource.')
           return
         }
-        console.log('[TelemetryStore] Neural SSE stream established.')
+        // Neural SSE stream established
         set({ 
           websocketStatus: 'connected', 
           reconnectAttempts: 0 
@@ -277,7 +233,7 @@ export const useTelemetryStore = create<TelemetryStoreState>((set, get) => ({
   },
 
   disconnectFromTelemetry: () => {
-    console.log('[TelemetryStore] Terminating SSE stream gracefully.')
+    // Terminating SSE stream gracefully
     
     // Set status to disconnected BEFORE closing to prevent trigger of reconnect loop
     set({ websocketStatus: 'disconnected', reconnectAttempts: 0 })

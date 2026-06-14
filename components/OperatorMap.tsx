@@ -21,17 +21,50 @@ const TARGET_VIEWBOXES: Record<TrackKey, [number, number, number, number]> = {
   TRUCKER: [136, 29, 12, 8]        // West India expressway corridor (Mumbai to Pune)
 };
 
-// Detailed stylized vector outlines of continents mapped on a 200x100 grid
-const CONTINENTS = {
-  greenland: 'M 58,4 L 72,2 L 68,12 L 60,15 Z',
-  northAmerica: 'M 10,15 L 22,12 L 35,8 L 45,8 L 52,12 L 55,20 L 62,28 L 55,38 L 42,42 L 32,45 L 28,48 L 26,40 L 28,32 L 20,30 L 15,22 Z',
-  southAmerica: 'M 42,42 L 52,48 L 58,58 L 54,72 L 48,82 L 44,85 L 42,75 L 38,62 L 38,50 Z',
-  eurasia: 'M 70,20 L 82,15 L 95,12 L 115,10 L 140,12 L 165,15 L 180,22 L 185,35 L 175,48 L 155,52 L 145,40 L 135,45 L 125,48 L 115,48 L 110,40 L 98,38 L 88,40 L 78,35 Z',
-  africa: 'M 78,35 L 88,40 L 98,38 L 105,45 L 112,50 L 118,58 L 112,70 L 105,78 L 98,82 L 95,75 L 88,60 L 80,50 L 75,42 Z',
-  australia: 'M 152,65 L 165,60 L 175,65 L 178,72 L 168,78 L 155,75 Z',
-  japan: 'M 172,25 L 175,28 L 178,32 L 175,30 Z',
-  uk: 'M 68,22 L 72,18 L 74,22 L 70,25 Z'
-};
+// Detailed vector outlines of continents + countries on a 200x100 Mercator grid
+// x: 0→200 = lon -180→+180, y: 0→100 = lat +85→-85
+const LAND_MASSES: { id: string; d: string; highlight?: boolean }[] = [
+  // North America
+  { id: 'na', d: 'M8,16 L12,14 L18,11 L24,9 L32,7 L38,7 L44,8 L48,10 L52,13 L54,16 L56,19 L58,22 L60,26 L58,30 L54,34 L50,37 L46,39 L42,41 L38,43 L35,44 L32,46 L30,48 L28,46 L26,42 L25,38 L26,34 L25,30 L22,28 L18,26 L14,22 L10,19 Z' },
+  // Central America
+  { id: 'ca', d: 'M32,46 L35,44 L37,46 L39,48 L38,50 L36,51 L34,50 L33,48 Z' },
+  // South America
+  { id: 'sa', d: 'M38,50 L42,48 L46,50 L50,52 L54,55 L56,58 L57,62 L56,66 L54,70 L52,74 L50,78 L48,81 L46,84 L44,86 L43,82 L42,78 L41,74 L40,68 L39,62 L38,56 Z' },
+  // Greenland
+  { id: 'gl', d: 'M56,4 L62,3 L68,2 L72,4 L70,8 L68,12 L64,14 L60,13 L58,9 Z' },
+  // Europe
+  { id: 'eu', d: 'M80,18 L84,16 L88,14 L92,15 L96,17 L98,20 L97,23 L94,25 L90,26 L86,27 L82,26 L79,24 L78,21 Z' },
+  // Scandinavia
+  { id: 'sc', d: 'M84,10 L86,8 L90,7 L92,9 L91,12 L89,14 L86,14 L84,12 Z' },
+  // UK/Ireland
+  { id: 'uk', d: 'M78,18 L80,16 L82,17 L81,20 L79,21 Z M76,18 L77,17 L78,18 L77,20 Z' },
+  // Russia/Central Asia
+  { id: 'ru', d: 'M96,17 L102,14 L110,11 L120,9 L132,8 L144,9 L156,11 L165,14 L172,17 L178,20 L180,24 L178,28 L174,30 L168,30 L162,28 L156,27 L150,26 L144,25 L138,24 L132,22 L126,21 L120,20 L114,19 L108,18 L102,17 Z' },
+  // Middle East
+  { id: 'me', d: 'M108,30 L112,28 L116,29 L120,30 L122,32 L124,34 L122,36 L118,37 L114,36 L110,34 L108,32 Z' },
+  // Africa
+  { id: 'af', d: 'M82,35 L86,34 L90,33 L94,34 L98,36 L102,38 L106,40 L110,43 L114,47 L116,52 L117,57 L116,62 L114,67 L111,72 L107,76 L103,79 L99,81 L95,80 L92,76 L89,71 L87,66 L85,60 L84,54 L83,48 L82,42 Z' },
+  // Madagascar
+  { id: 'mg', d: 'M118,65 L120,63 L121,66 L120,70 L118,69 Z' },
+  // India (HIGHLIGHTED - main tracking area)
+  { id: 'in', d: 'M134,28 L136,27 L138,27 L140,28 L142,29 L144,30 L145,32 L144,34 L143,36 L142,38 L140,40 L139,38 L138,36 L137,34 L136,32 L135,30 Z', highlight: true },
+  // Sri Lanka
+  { id: 'lk', d: 'M141,40 L142,39.5 L142.5,41 L141.5,42 L141,41 Z' },
+  // China/East Asia
+  { id: 'cn', d: 'M144,25 L150,24 L156,23 L162,24 L166,26 L168,28 L168,31 L166,34 L162,36 L158,37 L154,36 L150,34 L148,32 L146,30 L144,28 Z' },
+  // Southeast Asia
+  { id: 'sea', d: 'M154,38 L158,37 L162,38 L164,40 L162,43 L160,45 L157,46 L155,44 L154,41 Z' },
+  // Indonesia
+  { id: 'id', d: 'M155,48 L158,47 L162,48 L166,49 L170,50 L174,50 L172,52 L168,52 L164,51 L160,50 L156,50 Z' },
+  // Japan
+  { id: 'jp', d: 'M172,22 L174,20 L176,22 L175,25 L173,27 L172,25 Z' },
+  // Korea
+  { id: 'kr', d: 'M168,24 L170,22 L171,24 L170,27 L168,26 Z' },
+  // Australia
+  { id: 'au', d: 'M156,62 L162,58 L168,57 L174,59 L178,62 L180,66 L178,70 L174,73 L170,75 L166,74 L162,72 L158,69 L156,66 Z' },
+  // New Zealand
+  { id: 'nz', d: 'M184,72 L186,70 L187,73 L186,76 L184,75 Z M185,77 L186,76 L187,78 L186,80 L185,79 Z' },
+];
 
 interface PingEvent {
   id: number;
@@ -275,11 +308,22 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
     return () => cancelAnimationFrame(animId);
   }, [activeTrackKey]);
 
+  // Use refs so animation loop doesn't restart on speed change
+  const simSpeedRef = useRef(simSpeed);
+  simSpeedRef.current = simSpeed;
+  const localProgressRef = useRef(0.35);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const pathNameRef = useRef<HTMLSpanElement>(null);
+
+  // Reset progress when switching tracks
+  useEffect(() => {
+    localProgressRef.current = 0.35;
+  }, [activeTrackKey]);
+
   useEffect(() => {
     let lastTime = performance.now();
     let frameId: number;
     let frameCount = 0;
-    let localProgress = 0.35;
     let localRadarAngle = 0;
 
     const updateDom = (now: number) => {
@@ -287,18 +331,22 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
       lastTime = now;
       frameCount++;
 
-      if (simSpeed > 0) {
-        let speedFactor = 0.015;
-        if (activeTrackKey === 'ASTRONAUT') speedFactor = 0.006;
-        if (activeTrackKey === 'PILOT') speedFactor = 0.012;
-        if (activeTrackKey === 'SURGEON') speedFactor = 0.02;
-        if (activeTrackKey === 'TRAIN_PILOT') speedFactor = 0.025;
-        if (activeTrackKey === 'TRUCKER') speedFactor = 0.018;
-        localProgress = (localProgress + speedFactor * simSpeed * dt) % 1.0;
+      const currentSpeed = simSpeedRef.current;
+
+      if (currentSpeed > 0) {
+        // Amplify higher speeds so the difference is very obvious
+        const amplifiedSpeed = currentSpeed === 1 ? 1 : currentSpeed === 5 ? 15 : 40;
+        let speedFactor = 0.025;
+        if (activeTrackKey === 'ASTRONAUT') speedFactor = 0.01;
+        if (activeTrackKey === 'PILOT') speedFactor = 0.02;
+        if (activeTrackKey === 'SURGEON') speedFactor = 0.03;
+        if (activeTrackKey === 'TRAIN_PILOT') speedFactor = 0.035;
+        if (activeTrackKey === 'TRUCKER') speedFactor = 0.03;
+        localProgressRef.current = (localProgressRef.current + speedFactor * amplifiedSpeed * dt) % 1.0;
       }
       localRadarAngle = (localRadarAngle + 90 * dt) % 360;
 
-      const tele = getTrackingTelemetryAt(localProgress, activeTrackKey);
+      const tele = getTrackingTelemetryAt(localProgressRef.current, activeTrackKey);
 
       if (dotGroupRef.current) {
         if (activeTrackKey === 'SURGEON') {
@@ -344,18 +392,33 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
       }
 
       if (frameCount % 6 === 0) {
-        if (latTextRef.current) latTextRef.current.textContent = activeTrackKey === 'SURGEON' ? 'RESTRICTED' : `${Math.abs(tele.lat).toFixed(6)}° ${tele.lat >= 0 ? 'N' : 'S'}`;
-        if (lonTextRef.current) lonTextRef.current.textContent = activeTrackKey === 'SURGEON' ? 'RESTRICTED' : `${Math.abs(tele.lon).toFixed(6)}° ${tele.lon >= 0 ? 'E' : 'W'}`;
-        if (altTextRef.current) altTextRef.current.textContent = activeTrackKey === 'SURGEON' ? 'RESTRICTED' : activeTrackKey === 'ASTRONAUT' ? `${tele.alt.toFixed(2)} km` : `${Math.round(tele.alt).toLocaleString()} ft`;
-        if (velTextRef.current) velTextRef.current.textContent = activeTrackKey === 'SURGEON' ? 'RESTRICTED' : activeTrackKey === 'ASTRONAUT' ? `${Math.round(tele.speed).toLocaleString()} km/h` : activeTrackKey === 'PILOT' ? `${Math.round(tele.speed)} kn` : activeTrackKey === 'TRAIN_PILOT' ? `${Math.round(tele.speed)} km/h` : `${Math.round(tele.speed)} mph`;
-        if (headingTextRef.current) headingTextRef.current.textContent = activeTrackKey === 'SURGEON' ? 'N/A' : `${String(tele.heading).padStart(3, '0')}°`;
-        if (satTextRef.current) satTextRef.current.textContent = activeTrackKey === 'SURGEON' ? '0 LOCK' : `${tele.satellites} LOCK`;
+        const isSurgeon = activeTrackKey === 'SURGEON';
+        if (latTextRef.current) latTextRef.current.textContent = isSurgeon ? 'RESTRICTED' : `${Math.abs(tele.lat).toFixed(6)}° ${tele.lat >= 0 ? 'N' : 'S'}`;
+        if (lonTextRef.current) lonTextRef.current.textContent = isSurgeon ? 'RESTRICTED' : `${Math.abs(tele.lon).toFixed(6)}° ${tele.lon >= 0 ? 'E' : 'W'}`;
+        if (altTextRef.current) {
+          if (isSurgeon) altTextRef.current.textContent = 'RESTRICTED';
+          else if (activeTrackKey === 'ASTRONAUT') altTextRef.current.textContent = `${tele.alt.toFixed(2)} km`;
+          else if (activeTrackKey === 'TRUCKER') altTextRef.current.textContent = `${Math.round(tele.alt)} m`;
+          else altTextRef.current.textContent = `${Math.round(tele.alt).toLocaleString()} ft`;
+        }
+        if (velTextRef.current) {
+          if (isSurgeon) velTextRef.current.textContent = 'RESTRICTED';
+          else if (activeTrackKey === 'ASTRONAUT') velTextRef.current.textContent = `${Math.round(tele.speed).toLocaleString()} km/h`;
+          else if (activeTrackKey === 'PILOT') velTextRef.current.textContent = `${Math.round(tele.speed)} kn`;
+          else if (activeTrackKey === 'TRAIN_PILOT') velTextRef.current.textContent = `${Math.round(tele.speed)} km/h`;
+          else velTextRef.current.textContent = `${Math.round(tele.speed)} km/h`;
+        }
+        if (headingTextRef.current) headingTextRef.current.textContent = isSurgeon ? 'N/A' : `${String(tele.heading).padStart(3, '0')}°`;
+        if (satTextRef.current) satTextRef.current.textContent = isSurgeon ? '0 LOCK' : `${tele.satellites} LOCK`;
+        if (labelRef.current) labelRef.current.textContent = tele.label;
+        if (pathNameRef.current) pathNameRef.current.textContent = tele.pathName;
       }
       frameId = requestAnimationFrame(updateDom);
     };
 
     frameId = requestAnimationFrame(updateDom);
     return () => cancelAnimationFrame(frameId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [simSpeed, activeTrackKey, layers.scan, gs]);
 
   const initialTele = getTrackingTelemetryAt(0.35, activeTrackKey);
@@ -408,55 +471,26 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
         </div>
       </div>
 
-      <div className="flex-1 bg-black/55 relative flex items-center justify-center overflow-hidden p-1" style={{ minHeight: '160px' }}>
-        <div className="absolute top-2 left-2 z-10 flex flex-col gap-1.5 bg-black/80 border border-white/10 rounded p-1.5 text-[7.5px] font-mono text-slate-400">
-          <div className="text-[6.5px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 flex items-center gap-1">
+      <div className="flex-1 relative flex items-center justify-center overflow-hidden" style={{ minHeight: '180px', background: 'linear-gradient(180deg, #020a08 0%, #041210 40%, #061a14 100%)' }}>
+        <div className="absolute top-2 left-2 z-10 flex flex-col gap-0.5 bg-black/85 backdrop-blur-sm border border-white/8 rounded-md p-1.5 text-[7px] font-mono">
+          <div className="text-[6px] font-bold text-slate-500 uppercase tracking-[0.15em] mb-0.5 flex items-center gap-1 px-1">
             <Layers className="w-2.5 h-2.5" /> LAYERS
           </div>
-          <button 
-            onClick={() => setLayers(l => ({ ...l, grid: !l.grid }))} 
-            className="px-1.5 py-0.5 rounded text-left flex items-center justify-between gap-3 cursor-pointer transition-colors hover:text-white"
-            style={{
-              color: layers.grid ? themeColor : undefined,
-              backgroundColor: layers.grid ? `${themeColor}15` : undefined
-            }}
-          >
-            <span>GRID</span>
-            <span className="w-1 h-1 rounded-full bg-current"></span>
-          </button>
-          <button 
-            onClick={() => setLayers(l => ({ ...l, terrain: !l.terrain }))} 
-            className="px-1.5 py-0.5 rounded text-left flex items-center justify-between gap-3 cursor-pointer transition-colors hover:text-white"
-            style={{
-              color: layers.terrain ? themeColor : undefined,
-              backgroundColor: layers.terrain ? `${themeColor}15` : undefined
-            }}
-          >
-            <span>TERRAIN</span>
-            <span className="w-1 h-1 rounded-full bg-current"></span>
-          </button>
-          <button 
-            onClick={() => setLayers(l => ({ ...l, path: !l.path }))} 
-            className="px-1.5 py-0.5 rounded text-left flex items-center justify-between gap-3 cursor-pointer transition-colors hover:text-white"
-            style={{
-              color: layers.path ? themeColor : undefined,
-              backgroundColor: layers.path ? `${themeColor}15` : undefined
-            }}
-          >
-            <span>PATH</span>
-            <span className="w-1 h-1 rounded-full bg-current"></span>
-          </button>
-          <button 
-            onClick={() => setLayers(l => ({ ...l, scan: !l.scan }))} 
-            className="px-1.5 py-0.5 rounded text-left flex items-center justify-between gap-3 cursor-pointer transition-colors hover:text-white"
-            style={{
-              color: layers.scan ? themeColor : undefined,
-              backgroundColor: layers.scan ? `${themeColor}15` : undefined
-            }}
-          >
-            <span>SCANNER</span>
-            <span className="w-1 h-1 rounded-full bg-current"></span>
-          </button>
+          {(['grid', 'terrain', 'path', 'scan'] as const).map(key => (
+            <button
+              key={key}
+              onClick={() => setLayers(l => ({ ...l, [key]: !l[key] }))}
+              className="px-1.5 py-[3px] rounded text-left flex items-center justify-between gap-3 cursor-pointer transition-all duration-150"
+              style={{
+                color: layers[key] ? themeColor : '#475569',
+                backgroundColor: layers[key] ? `${themeColor}12` : 'transparent',
+                borderLeft: layers[key] ? `2px solid ${themeColor}` : '2px solid transparent'
+              }}
+            >
+              <span className="uppercase">{key === 'scan' ? 'SCANNER' : key}</span>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: layers[key] ? themeColor : '#334155' }}></span>
+            </button>
+          ))}
         </div>
 
         <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-black/80 border border-white/10 rounded px-1.5 py-1 text-[7.5px] font-mono">
@@ -492,63 +526,48 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
           ref={svgRef}
           viewBox="0 0 200 100" 
           onClick={handleMapClick}
-          className="w-full h-full opacity-90 select-none cursor-crosshair"
-          style={{ maxHeight: '200px' }}
+          className="w-full h-full select-none cursor-crosshair"
         >
           <defs>
-            <pattern id="landPattern" width="2" height="2" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="0.35" fill={themeColor} opacity="0.32" />
-            </pattern>
+            <radialGradient id="oceanGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={themeColor} stopOpacity="0.04" />
+              <stop offset="100%" stopColor={themeColor} stopOpacity="0" />
+            </radialGradient>
           </defs>
+          <rect x="0" y="0" width="200" height="100" fill="url(#oceanGlow)" />
 
           {layers.grid && (
-            <g stroke="rgba(255,255,255,0.03)" strokeWidth="0.3" fill="none">
+            <g stroke="rgba(255,255,255,0.05)" strokeWidth="0.3" fill="none">
               <line x1="20" y1="0" x2="20" y2="100" vectorEffect="non-scaling-stroke" />
               <line x1="40" y1="0" x2="40" y2="100" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
               <line x1="60" y1="0" x2="60" y2="100" vectorEffect="non-scaling-stroke" />
               <line x1="80" y1="0" x2="80" y2="100" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
-              <line x1="100" y1="0" x2="100" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+              <line x1="100" y1="0" x2="100" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.4" vectorEffect="non-scaling-stroke" />
               <line x1="120" y1="0" x2="120" y2="100" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
               <line x1="140" y1="0" x2="140" y2="100" vectorEffect="non-scaling-stroke" />
               <line x1="160" y1="0" x2="160" y2="100" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
               <line x1="180" y1="0" x2="180" y2="100" vectorEffect="non-scaling-stroke" />
               <line x1="0" y1="20" x2="200" y2="20" vectorEffect="non-scaling-stroke" />
               <line x1="0" y1="40" x2="200" y2="40" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
-              <line x1="0" y1="50" x2="200" y2="50" stroke="rgba(255,255,255,0.06)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+              <line x1="0" y1="50" x2="200" y2="50" stroke="rgba(255,255,255,0.06)" strokeWidth="0.4" vectorEffect="non-scaling-stroke" />
               <line x1="0" y1="60" x2="200" y2="60" strokeDasharray="1,2" vectorEffect="non-scaling-stroke" />
               <line x1="0" y1="80" x2="200" y2="80" vectorEffect="non-scaling-stroke" />
             </g>
           )}
 
-          {layers.grid && (
-            <g stroke="rgba(255,255,255,0.08)" strokeWidth="0.4" fill="none">
-              <rect x="0" y="0" width="200" height="100" vectorEffect="non-scaling-stroke" />
-              <line x1="20" y1="0" x2="20" y2="1.5" vectorEffect="non-scaling-stroke" />
-              <line x1="40" y1="0" x2="40" y2="1.5" vectorEffect="non-scaling-stroke" />
-              <line x1="60" y1="0" x2="60" y2="1.5" vectorEffect="non-scaling-stroke" />
-              <line x1="80" y1="0" x2="80" y2="1.5" vectorEffect="non-scaling-stroke" />
-              <line x1="100" y1="0" x2="100" y2="2.5" vectorEffect="non-scaling-stroke" />
-              <line x1="120" y1="0" x2="120" y2="1.5" vectorEffect="non-scaling-stroke" />
-              <line x1="140" y1="0" x2="140" y2="1.5" vectorEffect="non-scaling-stroke" />
-              <line x1="160" y1="0" x2="160" y2="1.5" vectorEffect="non-scaling-stroke" />
-              <line x1="180" y1="0" x2="180" y2="1.5" vectorEffect="non-scaling-stroke" />
-              <line x1="0" y1="20" x2="1.5" y2="20" vectorEffect="non-scaling-stroke" />
-              <line x1="0" y1="40" x2="1.5" y2="40" vectorEffect="non-scaling-stroke" />
-              <line x1="0" y1="50" x2="2.5" y2="50" vectorEffect="non-scaling-stroke" />
-              <line x1="0" y1="60" x2="1.5" y2="60" vectorEffect="non-scaling-stroke" />
-              <line x1="0" y1="80" x2="1.5" y2="80" vectorEffect="non-scaling-stroke" />
-            </g>
-          )}
-
+          {/* Country/Continent borders with solid fills */}
           <g>
-            {Object.entries(CONTINENTS).map(([key, pathD]) => (
+            {LAND_MASSES.map(({ id, d, highlight }) => (
               <path 
-                key={key} 
-                d={pathD}
-                stroke={themeColor}
-                strokeWidth="0.45"
-                fill={layers.terrain ? 'url(#landPattern)' : 'rgba(255,255,255,0.01)'}
-                strokeOpacity="0.4"
+                key={id} 
+                d={d}
+                stroke={highlight ? themeColor : 'rgba(255,255,255,0.25)'}
+                strokeWidth={highlight ? '0.5' : '0.3'}
+                fill={
+                  !layers.terrain ? 'transparent' :
+                  highlight ? `${themeColor}20` : 'rgba(255,255,255,0.04)'
+                }
+                strokeOpacity={highlight ? 0.8 : 0.5}
                 vectorEffect="non-scaling-stroke"
               />
             ))}
@@ -556,19 +575,19 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
 
           {gs && (
             <g transform={`translate(${gs.svgX}, ${gs.svgY})`}>
-              <polygon points="0,-2.2 2.2,0 0,2.2 -2.2,0" fill={gs.color} opacity="0.95" />
-              <polygon points="0,-4.5 4.5,0 0,4.5 -4.5,0" fill="none" stroke={gs.color} strokeWidth="0.3" vectorEffect="non-scaling-stroke">
+              <polygon points="0,-0.8 0.8,0 0,-0.8 -0.8,0" fill={gs.color} opacity="0.95" />
+              <polygon points="0,-1.5 1.5,0 0,1.5 -1.5,0" fill="none" stroke={gs.color} strokeWidth="0.3" vectorEffect="non-scaling-stroke">
                 <animate attributeName="opacity" values="0.8;0.1;0.8" dur="2.2s" repeatCount="indefinite" />
-                <animate attributeName="transform" values="scale(1); scale(1.4); scale(1)" dur="2.2s" repeatCount="indefinite" />
+                <animate attributeName="transform" values="scale(1); scale(1.3); scale(1)" dur="2.2s" repeatCount="indefinite" />
               </polygon>
               <text 
-                x="3.5" 
-                y="1" 
-                fontSize="2.2px" 
+                x="1.8" 
+                y="0.4" 
+                fontSize="1px" 
                 fontFamily="monospace" 
                 fill={gs.color} 
                 fontWeight="bold"
-                letterSpacing="0.04em"
+                letterSpacing="0.03em"
                 opacity="0.9"
               >
                 {gs.label}
@@ -590,7 +609,7 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
                 opacity="0.32" 
                 vectorEffect="non-scaling-stroke"
               />
-              <circle ref={signalPacketRef} r="0.5" fill={themeColor} />
+              <circle ref={signalPacketRef} r="0.2" fill={themeColor} />
             </g>
           )}
 
@@ -618,8 +637,8 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
                     opacity="0.8"
                     vectorEffect="non-scaling-stroke"
                   />
-                  <circle cx="144" cy="32" r="1.2" fill={themeColor} opacity="0.6" />
-                  <circle cx="143" cy="36" r="1.2" fill={themeColor} opacity="0.6" />
+                  <circle cx="144" cy="32" r="0.4" fill={themeColor} opacity="0.7" />
+                  <circle cx="143" cy="36" r="0.4" fill={themeColor} opacity="0.7" />
                 </>
               )}
               {activeTrackKey === 'TRAIN_PILOT' && (
@@ -648,9 +667,9 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
 
           {pings.map(ping => (
             <g key={ping.id}>
-              <circle cx={ping.x} cy={ping.y} r="1.5" fill={C.red} />
-              <circle cx={ping.x} cy={ping.y} r="8" fill="none" stroke={C.red} strokeWidth="0.4" vectorEffect="non-scaling-stroke">
-                <animate attributeName="r" values="1;9" dur="1.2s" repeatCount="indefinite" />
+              <circle cx={ping.x} cy={ping.y} r="0.4" fill={C.red} />
+              <circle cx={ping.x} cy={ping.y} r="3" fill="none" stroke={C.red} strokeWidth="0.3" vectorEffect="non-scaling-stroke">
+                <animate attributeName="r" values="0.4;3" dur="1.2s" repeatCount="indefinite" />
                 <animate attributeName="opacity" values="0.95;0" dur="1.2s" repeatCount="indefinite" />
               </circle>
             </g>
@@ -661,33 +680,33 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
               <line 
                 x1="0" 
                 y1="0" 
-                x2="18" 
+                x2="5" 
                 y2="0" 
                 stroke={themeColor} 
-                strokeWidth="0.45" 
-                opacity="0.3" 
+                strokeWidth="0.3" 
+                opacity="0.25" 
                 vectorEffect="non-scaling-stroke"
               />
               <circle 
                 cx="0" 
                 cy="0" 
-                r="18" 
+                r="5" 
                 fill="none" 
                 stroke={themeColor} 
-                strokeWidth="0.3" 
-                strokeDasharray="1.5,2.5" 
-                opacity="0.2" 
+                strokeWidth="0.2" 
+                strokeDasharray="0.5,1" 
+                opacity="0.15" 
                 vectorEffect="non-scaling-stroke"
               />
             </g>
           )}
 
           <g ref={dotGroupRef}>
-            <circle r="3.5" fill="none" stroke={themeColor} strokeWidth="0.4" vectorEffect="non-scaling-stroke">
-              <animate attributeName="r" values="1.2;5" dur="1.8s" repeatCount="indefinite" />
+            <circle r="1" fill="none" stroke={themeColor} strokeWidth="0.3" vectorEffect="non-scaling-stroke">
+              <animate attributeName="r" values="0.3;1.5" dur="1.8s" repeatCount="indefinite" />
               <animate attributeName="opacity" values="0.85;0" dur="1.8s" repeatCount="indefinite" />
             </circle>
-            <circle r="1.4" fill={themeColor} />
+            <circle r="0.35" fill={themeColor} />
           </g>
         </svg>
       </div>
@@ -695,83 +714,82 @@ export default function OperatorMap({ activeTrackKey, crisis }: OperatorMapProps
       <div className="px-3.5 py-2.5 bg-black/45 shrink-0 flex flex-col gap-2 border-t border-white/5 font-mono">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <Compass className="w-3.5 h-3.5 text-slate-500 animate-spin-slow" style={{ color: themeColor }} />
-            <span className="text-[9px] font-bold tracking-wider" style={{ color: C.fg }}>
+            <Compass className="w-3.5 h-3.5 animate-spin-slow" style={{ color: themeColor }} />
+            <span ref={labelRef} className="text-[9px] font-bold tracking-wider" style={{ color: C.fg }}>
               {initialTele.label}
             </span>
           </div>
-          <span className="text-[7.5px] font-bold uppercase tracking-widest px-1 py-0.2 rounded border bg-black/40 border-white/5" style={{ color: themeColor, borderColor: `${themeColor}30` }}>
+          <span ref={pathNameRef} className="text-[7.5px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded" style={{ color: themeColor, background: `${themeColor}12`, border: `1px solid ${themeColor}25` }}>
             {initialTele.pathName}
           </span>
         </div>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[8.5px] border-t border-white/5 pt-2">
           <div className="flex justify-between">
-            <span className="text-slate-500">LATITUDE</span>
+            <span className="text-slate-500">{activeTrackKey === 'SURGEON' ? 'LOCATION' : 'LATITUDE'}</span>
             <span ref={latTextRef} className="font-semibold tabular-nums" style={{ color: activeTrackKey === 'SURGEON' ? C.muted : C.fg }}>
               {activeTrackKey === 'SURGEON' ? 'RESTRICTED' : `${Math.abs(initialTele.lat).toFixed(6)}° ${initialTele.lat >= 0 ? 'N' : 'S'}`}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-500">ALTITUDE</span>
+            <span className="text-slate-500">
+              {activeTrackKey === 'ASTRONAUT' ? 'ORBITAL ALT' : activeTrackKey === 'PILOT' ? 'CABIN ALT' : activeTrackKey === 'TRUCKER' ? 'ELEVATION' : activeTrackKey === 'SURGEON' ? 'FLOOR' : 'TRACK ALT'}
+            </span>
             <span ref={altTextRef} className="font-semibold tabular-nums" style={{ color: activeTrackKey === 'SURGEON' ? C.muted : C.fg }}>
-              {activeTrackKey === 'SURGEON' 
-                ? 'RESTRICTED'
-                : activeTrackKey === 'ASTRONAUT' 
-                ? `${initialTele.alt.toFixed(2)} km` 
+              {activeTrackKey === 'SURGEON' ? 'RESTRICTED'
+                : activeTrackKey === 'ASTRONAUT' ? `${initialTele.alt.toFixed(2)} km`
+                : activeTrackKey === 'TRUCKER' ? `${Math.round(initialTele.alt)} m`
                 : `${Math.round(initialTele.alt).toLocaleString()} ft`}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-500">LONGITUDE</span>
+            <span className="text-slate-500">{activeTrackKey === 'SURGEON' ? 'ACCESS' : 'LONGITUDE'}</span>
             <span ref={lonTextRef} className="font-semibold tabular-nums" style={{ color: activeTrackKey === 'SURGEON' ? C.muted : C.fg }}>
               {activeTrackKey === 'SURGEON' ? 'RESTRICTED' : `${Math.abs(initialTele.lon).toFixed(6)}° ${initialTele.lon >= 0 ? 'E' : 'W'}`}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-500">VELOCITY</span>
+            <span className="text-slate-500">
+              {activeTrackKey === 'ASTRONAUT' ? 'ORBITAL VEL' : activeTrackKey === 'PILOT' ? 'AIRSPEED' : activeTrackKey === 'TRAIN_PILOT' ? 'RAIL SPEED' : activeTrackKey === 'TRUCKER' ? 'ROAD SPEED' : 'LATENCY'}
+            </span>
             <span ref={velTextRef} className="font-semibold tabular-nums" style={{ color: activeTrackKey === 'SURGEON' ? C.muted : C.fg }}>
-              {activeTrackKey === 'SURGEON' 
-                ? 'RESTRICTED'
-                : activeTrackKey === 'ASTRONAUT' 
-                ? `${Math.round(initialTele.speed).toLocaleString()} km/h` 
-                : activeTrackKey === 'PILOT'
-                ? `${Math.round(initialTele.speed)} kn`
-                : activeTrackKey === 'TRAIN_PILOT'
-                ? `${Math.round(initialTele.speed)} km/h`
-                : `${Math.round(initialTele.speed)} mph`}
+              {activeTrackKey === 'SURGEON' ? 'RESTRICTED'
+                : activeTrackKey === 'ASTRONAUT' ? `${Math.round(initialTele.speed).toLocaleString()} km/h`
+                : activeTrackKey === 'PILOT' ? `${Math.round(initialTele.speed)} kn`
+                : activeTrackKey === 'TRAIN_PILOT' ? `${Math.round(initialTele.speed)} km/h`
+                : `${Math.round(initialTele.speed)} km/h`}
             </span>
           </div>
           <div className="flex justify-between border-t border-white/5 pt-1.5 mt-0.5">
-            <span className="text-slate-500">HEADING</span>
+            <span className="text-slate-500">{activeTrackKey === 'SURGEON' ? 'BEARING' : 'HEADING'}</span>
             <span ref={headingTextRef} className="font-semibold tabular-nums text-slate-400">
               {activeTrackKey === 'SURGEON' ? 'N/A' : `${String(initialTele.heading).padStart(3, '0')}°`}
             </span>
           </div>
           <div className="flex justify-between border-t border-white/5 pt-1.5 mt-0.5">
-            <span className="text-slate-500">GPS SATS</span>
+            <span className="text-slate-500">{activeTrackKey === 'SURGEON' ? 'NETWORK' : 'GPS SATS'}</span>
             <span ref={satTextRef} className="font-semibold text-slate-400 flex items-center gap-1">
-              <Radio className="w-2.5 h-2.5 text-slate-500" style={{ color: themeColor }} /> {activeTrackKey === 'SURGEON' ? '0 LOCK' : `${initialTele.satellites} LOCK`}
+              <Radio className="w-2.5 h-2.5" style={{ color: themeColor }} />
+              {activeTrackKey === 'SURGEON' ? 'LAN ONLY' : `${initialTele.satellites} LOCK`}
             </span>
           </div>
         </div>
 
         <div className="flex items-center justify-between text-[7px] text-slate-500 border-t border-white/5 pt-2">
-          <div className="flex items-center gap-1">
-            <Lock className="w-2.5 h-2.5 text-green-500" />
-            <span>
+          <div className="flex items-center gap-1 min-w-0">
+            <Lock className="w-2.5 h-2.5 shrink-0" style={{ color: activeTrackKey === 'SURGEON' ? C.amber : C.green }} />
+            <span className="truncate">
               {activeTrackKey === 'SURGEON'
-                ? 'SYSTEM DOWNLINK RESTRICTED (CONFIDENTIAL SESSION)'
+                ? 'HIPAA RESTRICTED — NO GPS BROADCAST'
                 : gs?.downlinkStatus || 'SECURE DATA LINK NOMINAL'}
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span>PING: {initialTele.latency.toFixed(1)}ms</span>
             <div className="flex gap-0.5">
-              <div className="w-0.5 h-1.5 bg-green-500" style={{ backgroundColor: themeColor }}></div>
-              <div className="w-0.5 h-2 bg-green-500" style={{ backgroundColor: themeColor }}></div>
-              <div className="w-0.5 h-2.5 bg-green-500" style={{ backgroundColor: themeColor }}></div>
-              <div className="w-0.5 h-3 bg-green-500" style={{ backgroundColor: themeColor }}></div>
+              {[1.5, 2, 2.5, 3].map((h, i) => (
+                <div key={i} className="w-0.5 rounded-sm" style={{ height: `${h * 4}px`, backgroundColor: themeColor, opacity: i < (activeTrackKey === 'SURGEON' ? 2 : 4) ? 1 : 0.2 }} />
+              ))}
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { StatusType } from './constants';
 
-export function fmt(n: number, _p?: any): string {
-  return n.toFixed(2);
+export function fmt(n: number, p: number = 2): string {
+  return n.toFixed(p);
 }
 
 export function nowTime(): string {

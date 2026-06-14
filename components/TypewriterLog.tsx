@@ -81,7 +81,7 @@ export function LogRow({ entry, fresh }: { entry: LogEntry; fresh: boolean }) {
     <motion.div
       {...animateProps}
       className="flex gap-2.5 px-4 py-[4.5px] font-mono text-[10px] leading-relaxed"
-      style={{ background: LOG_BG[entry.level], borderLeft: `2px solid ${LOG_C[entry.level]}18` }}
+      style={{ background: LOG_BG[entry.level], borderLeft: `2px solid ${LOG_C[entry.level]}${entry.level === 'ALERT' || entry.level === 'WARN' ? '90' : '40'}` }}
     >
       <span className="shrink-0 tabular-nums w-[52px]" style={{ color: C.subtle }}>{entry.time}</span>
       <span className="shrink-0 w-8 font-semibold" style={{ color: LOG_C[entry.level] }}>{entry.level}</span>

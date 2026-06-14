@@ -55,6 +55,20 @@ export default function MetricCard({
     return zScore > 2.0 && status === 'ok' && !crisis;
   }, [value, history, status, crisis]);
 
+  // Trend arrow: compare average of last 3 vs previous 3 samples
+  const trendArrow = useMemo(() => {
+    if (!history || history.length < 6) return '→';
+    const recent = history.slice(-3);
+    const prior = history.slice(-6, -3);
+    const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+    const priorAvg = prior.reduce((a, b) => a + b, 0) / prior.length;
+    const delta = recentAvg - priorAvg;
+    const threshold = (max - min) * 0.01; // 1% of range
+    if (delta > threshold) return '↑';
+    if (delta < -threshold) return '↓';
+    return '→';
+  }, [history, min, max]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -133,6 +147,7 @@ export default function MetricCard({
         <span className="text-[32px] leading-none font-mono font-semibold tracking-tight tabular-nums" style={{ color }}>
           <AnimatedValue value={value} precision={precision} />
         </span>
+        <span className="text-[10px] font-mono mb-1 ml-0.5" style={{ color: trendArrow === '↑' ? C.red : trendArrow === '↓' ? C.green : C.subtle, opacity: trendArrow === '→' ? 0.4 : 0.9 }}>{trendArrow}</span>
         <span className="text-[11px] font-mono mb-1" style={{ color: C.subtle }}>{unit}</span>
       </div>
 

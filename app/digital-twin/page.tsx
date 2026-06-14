@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { motion, AnimatePresence } from 'framer-motion'
+import PageTransition from '@/components/PageTransition'
 import {
   Activity,
   Heart,
@@ -21,115 +22,30 @@ import {
   Eye,
   CheckCircle,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Maximize2,
+  Minimize2
 } from 'lucide-react'
+import AnimatedNumber from '@/components/AnimatedNumber'
 
 const DigitalTwinScene = dynamic(() => import('@/components/DigitalTwinScene'), {
   ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex items-center justify-center font-mono text-xs text-emerald-500/80">
-      CALIBRATING HOLOGRAPHIC WIREFRAME...
-    </div>
-  )
+  loading: () => <LoadingScreen />
 })
 
 import { useTelemetryStore } from '@/lib/useTelemetryStore'
+import { CONDITIONS } from '@/lib/conditions'
+import type { ConditionKey } from '@/lib/conditions'
+import DemoOverlay from '@/components/DemoOverlay'
+import OrganDetailPanel from '@/components/OrganDetailPanel'
+import LoadingScreen from '@/components/LoadingScreen'
+import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts'
+import { useAudioEngine } from '@/lib/useAudioEngine'
+import { useExport } from '@/lib/useExport'
 
-// Define medical conditions
-type ConditionKey = 'diabetes' | 'arrhythmia' | 'asthma' | 'epilepsy'
+import { Camera, Keyboard } from 'lucide-react'
 
-interface ConditionInfo {
-  name: string
-  status: 'NOMINAL' | 'WARNING' | 'CRISIS'
-  color: string // Tailwind text/border color
-  hexColor: string // Actual CSS hex color
-  bpm: number
-  spo2: number
-  resp: number
-  glucose: number
-  stress: number
-  desc: string
-  logs: string[]
-}
 
-const CONDITIONS: Record<ConditionKey, ConditionInfo> = {
-  diabetes: {
-    name: 'Diabetic Glucose Spike',
-    status: 'CRISIS',
-    color: 'text-amber-500 border-amber-500/30',
-    hexColor: '#ff9900',
-    bpm: 88,
-    spo2: 92,
-    resp: 16,
-    glucose: 260,
-    stress: 68,
-    desc: 'Systemic metabolic crisis detected. Elevated plasma glucose levels exceeding 260 mg/dL. Osmotic shift modeling active.',
-    logs: [
-      'Telemetry stream integrity 99.6%',
-      'Scanner: Re-evaluating... Diabetic Glucose Spike parameters...',
-      'System Integrity: 99.8%',
-      'Diagnostics: Osmotic shift modeling active',
-      'Status: Systemic metabolic crisis detected'
-    ]
-  },
-  arrhythmia: {
-    name: 'Cardiovascular Arrhythmia',
-    status: 'CRISIS',
-    color: 'text-red-500 border-red-500/30',
-    hexColor: '#ff2b56',
-    bpm: 138,
-    spo2: 95,
-    resp: 18,
-    glucose: 280,
-    stress: 76,
-    desc: 'Critical cardiac instability detected. Ectopic pacemaking in ventricles observed. Visualizing erratic PQRST complex.',
-    logs: [
-      'Telemetry stream integrity 99.6%',
-      'Scanner: Re-evaluating... Cardiovascular Arrhythmia parameters...',
-      'System Integrity: 99.8%',
-      'Diagnostics: High ventricular load observed',
-      'Status: Critical cardiac instability detected'
-    ]
-  },
-  asthma: {
-    name: 'Chronic Asthma',
-    status: 'WARNING',
-    color: 'text-cyan-400 border-cyan-500/30',
-    hexColor: '#00ccff',
-    bpm: 84,
-    spo2: 89,
-    resp: 9,
-    glucose: 280,
-    stress: 54,
-    desc: 'Compromised pulmonary ventilation. SpO2 critical threshold breached (<90%). Rhythmic respiration amplitude restriction.',
-    logs: [
-      'Telemetry stream integrity 99.6%',
-      'Scanner: Re-evaluating... Chronic Asthma parameters...',
-      'System Integrity: 99.8%',
-      'Diagnostics: Bronchial resistance modeling active',
-      'Status: Compromised pulmonary ventilation'
-    ]
-  },
-  epilepsy: {
-    name: 'Neurological Epilepsy',
-    status: 'CRISIS',
-    color: 'text-fuchsia-500 border-fuchsia-500/30',
-    hexColor: '#c040ff',
-    bpm: 112,
-    spo2: 92,
-    resp: 24,
-    glucose: 115,
-    stress: 91,
-    desc: 'Severe paroxysmal electrical discharge in cerebral cortex. Chaotic high-amplitude spike-and-wave EEG activity.',
-    logs: [
-      'Telemetry stream integrity 99.6%',
-      'Scanner: Re-evaluating... Neurological Epilepsy parameters...',
-      'System Integrity: 99.8%',
-      'Diagnostics: Cerebral cortex electrical discharges active',
-      'Status: Critical neurological seizure alert'
-    ]
-  }
-}
 
 // 3D Point Interface
 interface Point3D {
@@ -264,6 +180,32 @@ export default function DigitalTwin() {
   const setWireframeMode = useTelemetryStore((s) => s.setWireframeMode)
   const isDemoActive = useTelemetryStore((s) => s.liveTelemetryFrame.isDemoActive)
   const demoTime = useTelemetryStore((s) => s.liveTelemetryFrame.demoTime)
+  const selectedOrgan = useTelemetryStore((s) => s.selectedOrgan)
+
+  // New feature hooks
+  useKeyboardShortcuts()
+  const { isMuted, toggleMute } = useAudioEngine()
+
+  const canvasContainerRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const { takeScreenshot, generateReport } = useExport(canvasContainerRef)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  const toggleFullscreen = useCallback(() => {
+    const el = viewportRef.current
+    if (!el) return
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {})
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {})
+    }
+  }, [])
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
 
   const [sysTime, setSysTime] = useState('')
   const [tickerLogs, setTickerLogs] = useState<string[]>([])
@@ -282,13 +224,14 @@ export default function DigitalTwin() {
   const writeIndexRef = useRef<number>(0)
   const lastBeatTimeRef = useRef<number>(Date.now())
 
-  // Set local clock time
+  // Set local clock time (1Hz to avoid unnecessary re-renders)
   useEffect(() => {
     const updateTime = () => {
       const d = new Date()
-      setSysTime(d.toTimeString().split(' ')[0] + '.' + String(d.getMilliseconds()).padStart(3, '0'))
+      setSysTime(d.toTimeString().split(' ')[0])
     }
-    const timer = setInterval(updateTime, 45)
+    updateTime()
+    const timer = setInterval(updateTime, 1000)
     return () => clearInterval(timer)
   }, [])
 
@@ -513,12 +456,15 @@ export default function DigitalTwin() {
     const render = () => {
       if (!ctx || !canvas) return
       
-      // Set responsive resolution
+      // Set responsive resolution with DPR scaling for crisp rendering
+      const dpr = window.devicePixelRatio || 1
       const width = canvas.clientWidth
       const height = canvas.clientHeight
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width
-        canvas.height = height
+      if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+        canvas.width = Math.round(width * dpr)
+        canvas.height = Math.round(height * dpr)
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.scale(dpr, dpr)
       }
 
       ctx.clearRect(0, 0, width, height)
@@ -558,6 +504,10 @@ export default function DigitalTwin() {
       // Beat scale factor (pulsing organ simulation)
       let scalePulse = 1.0
       beatTimer += 0.03
+
+      // Auto-rotate the hologram
+      const rotSpeed = activeCondition === 'epilepsy' ? 0.045 : 0.008
+      angleY += rotSpeed
       
       if (activeCondition === 'arrhythmia') {
         // Double pulse peak (erratic ventricular beat)
@@ -909,10 +859,8 @@ export default function DigitalTwin() {
       const numChannels = 3
       const channelHeight = height / numChannels
 
-      // Update values
-      for (let step = 0; step < 2; step++) {
-        updateBuffer()
-      }
+      // Update values (single call per frame to match real-time speed)
+      updateBuffer()
 
       const offset = graphOffsetRef.current
       const stepX = width / bufferSize
@@ -989,6 +937,7 @@ export default function DigitalTwin() {
   }, [activeCondition, playPulseSound, liveBpm])
 
   return (
+    <PageTransition>
     <div className="min-h-screen bg-[#050807] text-slate-100 font-sans flex flex-col relative overflow-hidden">
       
       {/* Crisis Warning Vignette overlay */}
@@ -1048,7 +997,7 @@ export default function DigitalTwin() {
       <header className="h-16 border-b border-white/5 bg-[#050807]/90 backdrop-blur-md px-6 flex items-center justify-between relative z-50">
         
         {/* Left Side: Back Navigation */}
-        <a href="/?onboarded=true" className="inline-flex shrink-0" style={{ pointerEvents: 'auto' }}>
+        <a href="/?from3d=true" className="inline-flex shrink-0" style={{ pointerEvents: 'auto' }}>
           <span 
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm border border-emerald-500/20 hover:border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10 text-[9px] font-mono font-bold tracking-widest text-emerald-400 hover:text-emerald-300 transition-all duration-200 cursor-pointer"
           >
@@ -1095,26 +1044,36 @@ export default function DigitalTwin() {
 
             <div className="flex items-center gap-2 pl-6 border-l border-white/5">
               <span className="text-slate-400">AUDIO:</span>
-              <span className="font-semibold uppercase" style={{ color: audioEnabled ? '#10b981' : '#64748b' }}>
-                {audioEnabled ? 'ON' : 'OFF'}
+              <span className="font-semibold uppercase" style={{ color: !isMuted ? '#10b981' : '#64748b' }}>
+                {!isMuted ? 'ON' : 'OFF'}
               </span>
               <button
-                onClick={toggleAudio}
+                onClick={toggleMute}
                 className="w-6 h-3 rounded-sm border flex items-center px-0.5 transition-colors shrink-0 cursor-pointer ml-1"
                 style={{
-                  borderColor: audioEnabled ? '#10b981' : '#334155',
-                  background: audioEnabled ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
+                  borderColor: !isMuted ? '#10b981' : '#334155',
+                  background: !isMuted ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
                 }}
                 role="switch"
-                aria-checked={audioEnabled}
+                aria-checked={!isMuted}
                 aria-label="Toggle system audio"
               >
                 <motion.div
                   className="w-2 h-2 rounded-[1px]"
-                  style={{ background: audioEnabled ? '#10b981' : '#334155' }}
-                  animate={{ x: audioEnabled ? 10 : 0 }}
+                  style={{ background: !isMuted ? '#10b981' : '#334155' }}
+                  animate={{ x: !isMuted ? 10 : 0 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 />
+              </button>
+            </div>
+
+            {/* Export buttons */}
+            <div className="flex items-center gap-1 pl-6 border-l border-white/5">
+              <button onClick={takeScreenshot} className="p-1.5 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" title="Screenshot">
+                <Camera size={12} />
+              </button>
+              <button onClick={generateReport} className="p-1.5 rounded hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" title="Export Report">
+                <FileText size={12} />
               </button>
             </div>
           </div>
@@ -1163,9 +1122,52 @@ export default function DigitalTwin() {
               </div>
               <div className="flex flex-col gap-0.5">
                 <span className="text-slate-500">CORE TEMP:</span>
-                <span className="text-slate-300">98.6°F / 37°C</span>
+                <span className="text-slate-300">{(liveBpm > 100 ? 99.2 : 98.6).toFixed(1)}°F / {(liveBpm > 100 ? 37.3 : 37.0).toFixed(1)}°C</span>
               </div>
             </div>
+          </div>
+
+
+
+          {/* Organ Focus Panel */}
+          <div className="glass-panel p-3 rounded">
+            <span className="text-[9px] font-mono text-slate-500 tracking-wider uppercase font-semibold block mb-2">ORGAN FOCUS</span>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { key: 'brain' as const, label: '🧠 BRAIN', color: '#c040ff', condition: 'epilepsy' as const },
+                { key: 'lungs' as const, label: '🫁 LUNGS', color: '#00ccff', condition: 'asthma' as const },
+                { key: 'heart' as const, label: '❤️ HEART', color: '#ff2b56', condition: 'arrhythmia' as const },
+                { key: 'liver' as const, label: '🟠 LIVER', color: '#ff9900', condition: 'diabetes' as const },
+              ].map(({ key, label, color, condition }) => {
+                const isActive = useTelemetryStore.getState().selectedOrgan === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      useTelemetryStore.getState().setSelectedOrgan(key);
+                      useTelemetryStore.getState().setCurrentCondition(condition);
+                    }}
+                    className={`px-2 py-1.5 rounded border text-[8px] font-mono font-bold tracking-wider uppercase cursor-pointer transition-all duration-200 ${
+                      isActive
+                        ? 'shadow-[0_0_8px_currentColor]'
+                        : 'border-white/8 bg-white/2 hover:border-white/20 text-slate-500 hover:text-slate-300'
+                    }`}
+                    style={isActive ? { color, borderColor: `${color}50`, background: `${color}15` } : undefined}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => {
+                useTelemetryStore.getState().setSelectedOrgan('none');
+                useTelemetryStore.getState().setCustomZoomTarget(null);
+              }}
+              className="w-full mt-1.5 px-2 py-1 rounded border border-white/10 text-[8px] font-mono font-bold tracking-wider uppercase cursor-pointer transition-all duration-200 text-slate-400 hover:text-white hover:border-white/25 bg-white/2 hover:bg-white/5"
+            >
+              ↻ RESET VIEW
+            </button>
           </div>
 
           {/* System Status (Dynamic Title Card) */}
@@ -1252,7 +1254,7 @@ export default function DigitalTwin() {
                     ? 'text-amber-500 font-semibold'
                     : 'text-slate-100'
                 }`}>
-                  {liveBpm}
+                  <AnimatedNumber value={liveBpm} />
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">BPM</span>
               </div>
@@ -1292,7 +1294,7 @@ export default function DigitalTwin() {
                     ? 'text-amber-500 font-semibold'
                     : 'text-slate-100'
                 }`}>
-                  {liveSpo2}%
+                  <AnimatedNumber value={liveSpo2} />
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">%</span>
               </div>
@@ -1327,7 +1329,7 @@ export default function DigitalTwin() {
                     ? 'text-amber-500 animate-pulse font-semibold'
                     : 'text-slate-100'
                 }`}>
-                  {liveResp}
+                  <AnimatedNumber value={liveResp} />
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">/MIN</span>
               </div>
@@ -1367,7 +1369,7 @@ export default function DigitalTwin() {
                     ? 'text-amber-500 animate-pulse font-semibold'
                     : 'text-slate-100'
                 }`}>
-                  {liveGlucose}
+                  <AnimatedNumber value={liveGlucose} />
                 </span>
                 <span className="text-[9px] text-slate-500 font-mono">mg/dL</span>
               </div>
@@ -1383,7 +1385,7 @@ export default function DigitalTwin() {
         <section className="lg:col-span-2 flex flex-col gap-3 relative min-h-[400px]">
           
           {/* Neon glassmorphic frame */}
-          <div className="flex-1 rounded border border-emerald-500/25 bg-[#040806]/75 relative overflow-hidden flex flex-col shadow-[inset_0_0_20px_rgba(0,255,170,0.08)]">
+          <div ref={viewportRef} className="flex-1 rounded border border-emerald-500/25 bg-[#040806]/75 relative overflow-hidden flex flex-col shadow-[inset_0_0_20px_rgba(0,255,170,0.08)]">
             
             {/* Viewport Info Overlay (Top Left) */}
             <div className="absolute top-4 left-4 font-mono text-[9px] text-emerald-500/80 bg-black/60 border border-emerald-500/10 px-2.5 py-1.5 rounded flex flex-col gap-0.5 z-10">
@@ -1416,15 +1418,24 @@ export default function DigitalTwin() {
                   </button>
                 ))}
               </div>
+
+              {/* Fullscreen toggle */}
+              <button
+                onClick={toggleFullscreen}
+                className="bg-black/60 border border-white/10 rounded p-1 cursor-pointer text-slate-500 hover:text-emerald-400 hover:border-emerald-500/30 transition-all"
+                title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+              >
+                {isFullscreen ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+              </button>
             </div>
 
             {/* 3D WebGL/Canvas */}
-            <div className="flex-1 min-h-0 w-full relative">
+            <div ref={canvasContainerRef} className="flex-1 min-h-0 w-full relative">
               <DigitalTwinScene currentCondition={activeCondition} />
             </div>
 
             {/* Viewport Info Overlay (Bottom Left) */}
-            <div className="absolute bottom-4 left-4 font-mono text-[9px] text-slate-500 flex items-center gap-4 bg-black/40 px-2 py-1 rounded">
+            <div className="absolute bottom-4 left-4 font-mono text-[9px] text-slate-500 flex items-center gap-4 bg-black/40 px-2 py-1 rounded z-30 pointer-events-none">
               <span className="flex items-center gap-1 text-emerald-400">
                 <CheckCircle className="w-3 h-3" />
                 SYSTEM_INTEGRITY: 99.8%
@@ -1432,8 +1443,23 @@ export default function DigitalTwin() {
               <span>CAMERA: PERSPECTIVE (FOV 400)</span>
             </div>
 
+            {/* RECALIBRATE VIEW — always visible, bottom center of 3D viewport */}
+            <button
+              onClick={() => {
+                useTelemetryStore.getState().setSelectedOrgan('none')
+                useTelemetryStore.getState().setCustomZoomTarget(null)
+              }}
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-md border border-cyan-500/20 bg-[#0a0f0d]/80 backdrop-blur-lg hover:border-emerald-400/50 hover:bg-emerald-500/10 transition-all duration-300 cursor-pointer group pointer-events-auto"
+              style={{ boxShadow: '0 0 18px rgba(0, 255, 170, 0.05), 0 2px 8px rgba(0,0,0,0.5)' }}
+            >
+              <RotateCcw size={11} className="text-emerald-400 group-hover:rotate-[-180deg] transition-transform duration-500" />
+              <span className="text-[9px] font-mono font-bold tracking-[0.2em] text-emerald-400/70 group-hover:text-emerald-300">
+                RECALIBRATE VIEW
+              </span>
+            </button>
+
             {/* Viewport Info Overlay (Bottom Right) */}
-            <div className="absolute bottom-4 right-4 font-mono text-[9px] text-slate-500 bg-black/40 px-2 py-1 rounded flex items-center gap-2">
+            <div className="absolute bottom-4 right-4 font-mono text-[9px] text-slate-500 bg-black/40 px-2 py-1 rounded flex items-center gap-2 z-30 pointer-events-none">
               <span>SCAN_LINE: ACTIVE</span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
             </div>
@@ -1443,6 +1469,9 @@ export default function DigitalTwin() {
 
         {/* Right Sidebar - System Activity Log & Controls */}
         <section className="lg:col-span-1 flex flex-col gap-4 overflow-y-auto">
+
+          {/* Organ Detail Panel (shows when an organ is focused) */}
+          <OrganDetailPanel />
 
           {/* Neural Network Stress Meter (Right, Center) */}
           <div className="glass-panel p-4 rounded flex flex-col gap-2">
@@ -1522,8 +1551,28 @@ export default function DigitalTwin() {
                 if (audioEnabled) {
                   playPulseSound(1200, 0.25, 0.05)
                 }
-                const oldLog = tickerLogs
-                setTickerLogs(['Calibration initiated...', 'Node pinging... SUCCESS', ...oldLog])
+                // Disconnect telemetry stream
+                useTelemetryStore.getState().disconnectFromTelemetry()
+                setTickerLogs(prev => ['⚡ Recalibrating telemetry nodes...', '⟳ Disconnecting SSE stream...', ...prev.slice(0, 6)])
+                
+                // Reset anomaly history
+                historyRef.current = { bpm: [], spo2: [], glucose: [] }
+                setAnomalies({ bpm: false, spo2: false, glucose: false })
+
+                // Reconnect after brief pause
+                setTimeout(() => {
+                  const condition = useTelemetryStore.getState().currentCondition || 'diabetes'
+                  const endpointMap: Record<string, string> = { diabetes: 'diabetes', arrhythmia: 'cardiac', asthma: 'respiratory', epilepsy: 'neurological' }
+                  const endpoint = endpointMap[condition] || 'diabetes'
+                  const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+                  const port = process.env.NEXT_PUBLIC_WS_PORT || '8080'
+                  const streamUrl = isLocal
+                    ? `${window.location.protocol}//${window.location.hostname}:${port}/api/stream/${endpoint}`
+                    : `${window.location.protocol}//${window.location.host}/api/stream/${endpoint}`
+                  
+                  useTelemetryStore.getState().connectToTelemetry(streamUrl)
+                  setTickerLogs(prev => ['✓ Nodes recalibrated — stream re-synced', '✓ Anomaly baselines reset', ...prev.slice(0, 6)])
+                }, 500)
               }}
               className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 hover:border-emerald-500/50 text-emerald-400 font-mono text-[10px] font-semibold tracking-widest uppercase rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-1.5"
             >
@@ -1542,20 +1591,6 @@ export default function DigitalTwin() {
             >
               <RotateCcw className="w-3 h-3" />
               RESET BASELINE
-            </button>
-
-            <button
-              onClick={() => {
-                useTelemetryStore.getState().setCustomZoomTarget(null)
-                useTelemetryStore.getState().setSelectedOrgan('none')
-                if (audioEnabled) {
-                  playPulseSound(600, 0.3, 0.05)
-                }
-              }}
-              className="w-full py-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 hover:border-blue-500/50 text-blue-400 font-mono text-[10px] font-semibold tracking-widest uppercase rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-1.5"
-            >
-              <Eye className="w-3 h-3" />
-              RECALIBRATE VIEW
             </button>
           </div>
 
@@ -1587,144 +1622,10 @@ export default function DigitalTwin() {
         </div>
       </section>
 
-      {/* ███ DEMO — BLACK BOX FLIGHT RECORDER POPUP ███ */}
-      <AnimatePresence>
-        {isDemoActive && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] flex items-end justify-center pb-6 pointer-events-none"
-          >
-            <motion.div
-              initial={{ y: 60, opacity: 0, scale: 0.95 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 60, opacity: 0, scale: 0.95 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 26 }}
-              className="pointer-events-auto w-[420px] max-w-[95vw] rounded-xl border overflow-hidden"
-              style={{
-                background: 'rgba(6, 8, 14, 0.95)',
-                backdropFilter: 'blur(24px) saturate(1.4)',
-                borderColor: demoTime >= 20 && demoTime < 40 ? 'rgba(255,59,92,0.45)' : 'rgba(0,212,255,0.25)',
-                boxShadow: demoTime >= 20 && demoTime < 40 
-                  ? '0 8px 40px rgba(255,59,92,0.2), 0 0 0 1px rgba(255,59,92,0.08)' 
-                  : '0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,212,255,0.06)'
-              }}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.35)' }}>
-                <div className="flex items-center gap-2.5">
-                  <motion.div 
-                    className="w-2 h-2 rounded-full"
-                    style={{ background: '#ff3b5c', boxShadow: '0 0 8px rgba(255,59,92,0.6)' }}
-                    animate={{ opacity: [1, 0.15, 1] }}
-                    transition={{ duration: 0.8, repeat: Infinity }}
-                  />
-                  <span className="text-[9px] font-mono font-bold tracking-[0.25em] uppercase" style={{ color: '#ff3b5c' }}>REC</span>
-                  <span className="text-[7px] font-mono tracking-[0.15em] uppercase" style={{ color: 'rgba(255,255,255,0.25)' }}>BLACK BOX RECORDER</span>
-                </div>
-                <span className="text-[10px] font-mono tabular-nums font-bold" style={{ color: '#00d4ff' }}>
-                  T+{String(Math.floor(demoTime / 60)).padStart(2, '0')}:{String(demoTime % 60).padStart(2, '0')}
-                </span>
-              </div>
-
-              {/* Phase Timeline */}
-              <div className="px-4 pt-3 pb-1">
-                <div className="flex items-center gap-[2px]">
-                  {[
-                    { label: 'BASE', start: 0, end: 10, color: '#00d4ff' },
-                    { label: 'DRIFT', start: 10, end: 20, color: '#ff9900' },
-                    { label: 'CRISIS', start: 20, end: 30, color: '#ff3b5c' },
-                    { label: 'OVRD', start: 30, end: 40, color: '#ff3b5c' },
-                    { label: 'RECV', start: 40, end: 50, color: '#00e599' },
-                    { label: 'OK', start: 50, end: 60, color: '#00e599' },
-                  ].map((phase, i) => {
-                    const isActive = demoTime >= phase.start && demoTime < phase.end;
-                    const isPast = demoTime >= phase.end;
-                    return (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
-                        <div className="w-full h-[5px] rounded-sm relative overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                          <motion.div
-                            className="h-full rounded-sm"
-                            style={{ background: isPast || isActive ? phase.color : 'transparent', opacity: isPast ? 0.5 : 1 }}
-                            animate={{ width: isActive ? `${((demoTime - phase.start) / (phase.end - phase.start)) * 100}%` : isPast ? '100%' : '0%' }}
-                            transition={{ duration: 0.5 }}
-                          />
-                        </div>
-                        <span className="text-[6px] font-mono tracking-wider uppercase" style={{ 
-                          color: isActive ? phase.color : isPast ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)',
-                          fontWeight: isActive ? 700 : 400
-                        }}>
-                          {phase.label}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Live Event Log */}
-              <div className="px-4 py-2.5">
-                <div className="rounded-lg px-3 py-2.5" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                  <div className="flex items-start gap-2.5">
-                    <motion.div 
-                      className="w-1.5 h-1.5 rounded-full mt-[3px] flex-shrink-0"
-                      style={{ background: demoTime >= 20 && demoTime < 40 ? '#ff3b5c' : '#00d4ff', boxShadow: `0 0 6px ${demoTime >= 20 && demoTime < 40 ? '#ff3b5c' : '#00d4ff'}` }}
-                      animate={{ scale: [1, 1.5, 1] }}
-                      transition={{ duration: 1.0, repeat: Infinity }}
-                    />
-                    <div className="flex flex-col gap-0.5 min-w-0">
-                      <span className="text-[7px] font-mono tracking-wider uppercase" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                        {demoTime < 10 && 'TELEMETRY INIT'}
-                        {demoTime >= 10 && demoTime < 20 && 'ANOMALY DETECTION'}
-                        {demoTime >= 20 && demoTime < 30 && 'CRISIS PROTOCOL'}
-                        {demoTime >= 30 && demoTime < 40 && 'OVERRIDE ACTIVE'}
-                        {demoTime >= 40 && demoTime < 50 && 'RECOVERY SEQUENCE'}
-                        {demoTime >= 50 && 'MISSION COMPLETE'}
-                      </span>
-                      <span className="text-[9px] font-mono leading-relaxed" style={{ color: demoTime >= 20 && demoTime < 40 ? '#ff3b5c' : 'rgba(255,255,255,0.6)' }}>
-                        {demoTime < 5 && 'Calibrating biosensors... Heart rate locked at 75 BPM.'}
-                        {demoTime >= 5 && demoTime < 10 && 'All channels nominal. SpO₂ 98.2% — streaming baseline.'}
-                        {demoTime >= 10 && demoTime < 15 && 'Z-Score drift on SpO₂ channel: σ = 1.4 → monitoring.'}
-                        {demoTime >= 15 && demoTime < 20 && '⚠ Heart rate trending +12% above rolling mean.'}
-                        {demoTime >= 20 && demoTime < 25 && '⛔ SpO₂ dropped below 83% — Auto-GCAS engaging.'}
-                        {demoTime >= 25 && demoTime < 30 && '⛔ Control stick LOCKED. Emergency pull-up initiated.'}
-                        {demoTime >= 30 && demoTime < 35 && '⛔ Manual controls bypassed. Cabin pressurization max.'}
-                        {demoTime >= 35 && demoTime < 40 && '⛔ Descent at 3000 ft/min. MAYDAY on 121.5 MHz.'}
-                        {demoTime >= 40 && demoTime < 45 && 'Recovery protocol engaged. SpO₂ climbing → 91%.'}
-                        {demoTime >= 45 && demoTime < 50 && 'Heart rate normalizing: 98 → 82 BPM. Disengaging AP.'}
-                        {demoTime >= 50 && demoTime < 55 && '✓ All vitals nominal. Override disengaged.'}
-                        {demoTime >= 55 && '✓ HOMEOSTASIS RESTORED — Black box saved.'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between px-4 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(0,0,0,0.2)' }}>
-                <span className="text-[7px] font-mono tracking-wider uppercase" style={{ 
-                  color: demoTime >= 20 && demoTime < 40 ? '#ff3b5c' : '#00e599' 
-                }}>
-                  {demoTime < 10 && '● NOMINAL'}
-                  {demoTime >= 10 && demoTime < 20 && '● DRIFT DETECTED'}
-                  {demoTime >= 20 && demoTime < 40 && '● CRITICAL — OVERRIDE'}
-                  {demoTime >= 40 && demoTime < 50 && '● RECOVERING'}
-                  {demoTime >= 50 && '● ALL SYSTEMS GO'}
-                </span>
-                <button
-                  onClick={() => useTelemetryStore.getState().stopDemo()}
-                  className="px-3 py-1 text-[8px] font-mono font-bold tracking-[0.15em] uppercase rounded-md cursor-pointer select-none transition-all hover:brightness-125"
-                  style={{ background: 'rgba(255,59,92,0.12)', color: '#ff3b5c', border: '1px solid rgba(255,59,92,0.25)' }}
-                >
-                  ■ STOP REC
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Demo Black Box Recorder Overlay */}
+      <DemoOverlay demoActive={isDemoActive} demoTime={demoTime} onStop={() => useTelemetryStore.getState().stopDemo()} />
 
     </div>
+    </PageTransition>
   )
 }

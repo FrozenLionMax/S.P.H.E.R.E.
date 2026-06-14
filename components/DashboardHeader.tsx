@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { C, TrackKey, TRACK_CONFIGS, STATUS, StatusType } from '@/lib/constants';
 import { fmt } from '@/lib/helpers';
 import ECG from '@/components/ECG';
-import { SignalBars } from '@/components/TrackVisualizer';
+
 
 interface DashboardHeaderProps {
   activeTrackKey: TrackKey;
@@ -66,7 +66,7 @@ export default function DashboardHeader({
           }}
           className="flex items-center gap-2.5 shrink-0 cursor-pointer text-left group transition-all hover:opacity-90 animate-fade-in"
           title="Return to Operator Selection"
-          aria-label="Return to Operator Selection Selection Screen"
+          aria-label="Return to Operator Selection Screen"
         >
           <div className="relative flex items-center justify-center">
             <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
@@ -107,7 +107,7 @@ export default function DashboardHeader({
               <span className="text-slate-500">HEIGHT / WT:</span> <span className="text-slate-300">182cm / 76kg</span>
             </div>
             <div>
-              <span className="text-slate-500">CORE TEMP:</span> <span className="text-slate-300">98.6°F / 37°C</span>
+              <span className="text-slate-500">CORE TEMP:</span> <span className="text-slate-300">{fmt(temp, 1)}°F / {((temp - 32) * 5/9).toFixed(1)}°C</span>
             </div>
           </div>
         </div>
@@ -137,6 +137,7 @@ export default function DashboardHeader({
               sound={false}
               audioCtx={audioCtx}
               volume={volume}
+              trackKey={activeTrackKey}
             />
           </div>
           <div className="flex flex-col items-end justify-center ml-1 pl-3 border-l border-white/5">
@@ -201,10 +202,56 @@ export default function DashboardHeader({
           )}
         </div>
 
-        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-sm border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
-          <SignalBars strength={connected ? 5 : 0} />
-          <span className="text-[8px] font-mono uppercase" style={{ color: C.muted }}>WS-LINK</span>
-        </div>
+        {/* Connection Quality Indicator */}
+        {(() => {
+          const linkLabels: Record<string, string> = {
+            ASTRONAUT: 'SAT-LINK',
+            PILOT: 'ATC-LINK',
+            SURGEON: 'LAN-SEC',
+            TRAIN_PILOT: 'RAIL-NET',
+            TRUCKER: 'MESH-V2V',
+          };
+          const basePings: Record<string, number> = {
+            ASTRONAUT: 280,
+            PILOT: 42,
+            SURGEON: 3,
+            TRAIN_PILOT: 18,
+            TRUCKER: 55,
+          };
+          const basePing = basePings[activeTrackKey] || 30;
+          const jitter = Math.sin(Date.now() / 2300) * basePing * 0.15;
+          const ping = Math.max(1, Math.round(basePing + jitter));
+          const pingColor = !connected ? '#ff3b5c' : ping < 50 ? '#00e599' : ping < 150 ? '#f59e0b' : '#ff3b5c';
+          const loss = !connected ? 100 : activeTrackKey === 'ASTRONAUT' ? 0.3 : 0;
+          const bars = !connected ? 0 : ping < 30 ? 5 : ping < 80 ? 4 : ping < 200 ? 3 : 2;
+          return (
+            <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-sm border" style={{ background: 'var(--panel)', borderColor: connected ? `${pingColor}25` : 'var(--border)' }}>
+              <div className="flex items-end gap-[1.5px] h-3">
+                {[1, 2, 3, 4, 5].map((b) => (
+                  <div key={b} className="w-[2.5px] rounded-[1px] transition-all duration-300" style={{
+                    height: `${b * 2.4}px`,
+                    background: b <= bars ? pingColor : 'rgba(255,255,255,0.08)',
+                  }} />
+                ))}
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[7px] font-mono font-bold tracking-wider uppercase" style={{ color: pingColor }}>
+                  {linkLabels[activeTrackKey] || 'WS-LINK'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[7px] font-mono tabular-nums" style={{ color: C.muted }}>
+                    {connected ? `${ping}ms` : 'OFFLINE'}
+                  </span>
+                  {loss > 0 && connected && (
+                    <span className="text-[6px] font-mono" style={{ color: C.amber }}>
+                      {loss}% LOSS
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-sm border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
           <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: healthScore > 75 ? C.green : healthScore > 50 ? C.amber : C.red }} />

@@ -3,9 +3,12 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Html, Line } from '@react-three/drei'
+import { EffectComposer, Bloom, Vignette, ChromaticAberration } from '@react-three/postprocessing'
+import { BlendFunction } from 'postprocessing'
 import * as THREE from 'three'
 import { useTelemetryStore } from '@/lib/useTelemetryStore'
 import { AlertTriangle, Heart, Activity, Brain, Shield } from 'lucide-react'
+import { HolographicScanLine, HexGridFloor, AmbientDust, HeartPulseRing, DNAHelix, BrainElectricArcs } from './HologramEffects'
 
 interface DigitalTwinSceneProps {
   transparent?: boolean
@@ -120,30 +123,14 @@ function HumanGlassSkin({ isDashboard = false }: { isDashboard?: boolean }) {
   return (
     <group 
       onClick={(e) => { 
-        if (isDashboard) return // Disable custom skin zoom on dashboard to keep view clean and 2D
-        e.stopPropagation()
-        
-        // Don't override if an organ was clicked (organ clicks are handled in their own groups)
-        const p = e.point
-        
-        // The safest way to zoom is to move the camera closer along the horizontal plane to the clicked point
-        const dir = camera.position.clone().sub(p)
-        dir.y = 0 // Flatten the Y axis so the camera stays perfectly level with the clicked point
-        dir.normalize()
-        if (dir.lengthSq() === 0) dir.set(0, 0, 1)
-        
-        // Place the camera 0.8 units away from the clicked point
-        const camPos = p.clone().add(dir.multiplyScalar(0.8))
-        
-        useTelemetryStore.getState().setCustomZoomTarget({ 
-          pos: [camPos.x, camPos.y, camPos.z], 
-          target: [p.x, p.y, p.z] 
-        })
-        useTelemetryStore.getState().setSelectedOrgan('custom')
+        if (isDashboard) return
+        // Don't intercept if an organ was clicked first — let it bubble
       }}
+      // Make the glass skin not block raycasts to inner organs
+      raycast={() => {}}
     >
       {/* Outer Skin Head Hull */}
-      <mesh position={[0, 1.4, 0]} scale={[1.02, 1.14, 1.02]}>
+      <mesh position={[0, 1.4, 0]} scale={[1.02, 1.14, 1.02]} raycast={() => {}}>
         <sphereGeometry args={[0.33, 24, 24]} />
         <meshPhysicalMaterial
           color={glassColor}
@@ -161,7 +148,7 @@ function HumanGlassSkin({ isDashboard = false }: { isDashboard?: boolean }) {
       </mesh>
 
       {/* Torso/Chest Hull */}
-      <mesh position={[0, 0.45, 0]} scale={[1.25, 1.05, 0.95]}>
+      <mesh position={[0, 0.45, 0]} scale={[1.25, 1.05, 0.95]} raycast={() => {}}>
         <cylinderGeometry args={[0.26, 0.22, 1.0, 20, 4]} />
         <meshPhysicalMaterial
           color={glassColor}
@@ -179,7 +166,7 @@ function HumanGlassSkin({ isDashboard = false }: { isDashboard?: boolean }) {
       </mesh>
 
       {/* Left Upper Arm Skin */}
-      <mesh position={[-0.55, 0.75, 0]} rotation={[0, 0, 0.25]}>
+      <mesh position={[-0.55, 0.75, 0]} rotation={[0, 0, 0.25]} raycast={() => {}}>
         <cylinderGeometry args={[0.045, 0.038, 0.55, 12]} />
         <meshPhysicalMaterial
           color={glassColor}
@@ -194,7 +181,7 @@ function HumanGlassSkin({ isDashboard = false }: { isDashboard?: boolean }) {
       </mesh>
 
       {/* Right Upper Arm Skin */}
-      <mesh position={[0.55, 0.75, 0]} rotation={[0, 0, -0.25]}>
+      <mesh position={[0.55, 0.75, 0]} rotation={[0, 0, -0.25]} raycast={() => {}}>
         <cylinderGeometry args={[0.045, 0.038, 0.55, 12]} />
         <meshPhysicalMaterial
           color={glassColor}
@@ -209,7 +196,7 @@ function HumanGlassSkin({ isDashboard = false }: { isDashboard?: boolean }) {
       </mesh>
 
       {/* Left Thigh Skin */}
-      <mesh position={[-0.22, -0.65, 0]} rotation={[0, 0, 0.05]}>
+      <mesh position={[-0.22, -0.65, 0]} rotation={[0, 0, 0.05]} raycast={() => {}}>
         <cylinderGeometry args={[0.07, 0.055, 0.75, 12]} />
         <meshPhysicalMaterial
           color={glassColor}
@@ -224,7 +211,7 @@ function HumanGlassSkin({ isDashboard = false }: { isDashboard?: boolean }) {
       </mesh>
 
       {/* Right Thigh Skin */}
-      <mesh position={[0.22, -0.65, 0]} rotation={[0, 0, -0.05]}>
+      <mesh position={[0.22, -0.65, 0]} rotation={[0, 0, -0.05]} raycast={() => {}}>
         <cylinderGeometry args={[0.07, 0.055, 0.75, 12]} />
         <meshPhysicalMaterial
           color={glassColor}
@@ -249,7 +236,7 @@ function DetailedSkeleton() {
   const jointColor = '#a8b0c0'
 
   return (
-    <group>
+    <group raycast={() => {}}>
       {/* 1. Spine vertebrae column: 12 segmented bones */}
       {Array.from({ length: 12 }, (_, i) => {
         const y = -0.2 + i * 0.1
@@ -412,7 +399,7 @@ const ProceduralHeart = React.forwardRef<
 
   return (
     <mesh ref={ref} rotation={[0.15, 0, 0.2]}>
-      <sphereGeometry args={[0.13, 64, 64]} />
+      <sphereGeometry args={[0.16, 64, 64]} />
       <meshStandardMaterial
         ref={materialRef}
         transparent
@@ -472,7 +459,7 @@ function AortaTube({ opacity }: { opacity: number }) {
   }
 
   return (
-    <mesh position={[-0.08, 0.46, 0.09]}>
+    <mesh position={[-0.08, 0.46, 0.09]} raycast={() => {}}>
       <tubeGeometry args={[curve, 64, 0.008, 16, false]} />
       <meshStandardMaterial
         color="#ff2b56"
@@ -490,7 +477,7 @@ function AortaTube({ opacity }: { opacity: number }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Visible Bloodflow Direction (Instanced Glowing Orbs)
 // ─────────────────────────────────────────────────────────────────────────────
-function VascularBloodflow({ points, count = 15, color = '#ff9900' }: { points: [number, number, number][], count?: number, color?: string }) {
+function VascularBloodflow({ points, count = 8, color = '#ff9900' }: { points: [number, number, number][], count?: number, color?: string }) {
   const meshRef = useRef<THREE.InstancedMesh>(null)
   
   const curve = useMemo(() => {
@@ -528,7 +515,7 @@ function VascularBloodflow({ points, count = 15, color = '#ff9900' }: { points: 
   return (
     <>
       <PulsingVascularLine points={points} color={color} baseWidth={0.8} baseOpacity={0.4} />
-      <instancedMesh ref={meshRef} args={[undefined, undefined, count]}>
+      <instancedMesh ref={meshRef} args={[undefined, undefined, count]} raycast={() => {}}>
         <sphereGeometry args={[0.006, 8, 8]} />
         <meshBasicMaterial color={color} transparent opacity={0.9} blending={THREE.AdditiveBlending} />
       </instancedMesh>
@@ -595,7 +582,7 @@ function PhysiologicalLung({ position, isLeft, color, emissiveIntensity, opacity
   // Use a softer geometry (sphere stretched) rather than a rigid cylinder for organic feel
   return (
     <mesh position={position}>
-      <sphereGeometry args={[0.1, 32, 32]} />
+      <sphereGeometry args={[0.14, 32, 32]} />
       <meshStandardMaterial
         ref={materialRef}
         wireframe
@@ -629,7 +616,8 @@ function CameraController({ controlsRef }: { controlsRef: any }) {
     none: { pos: new THREE.Vector3(0, 0, 3.8), target: new THREE.Vector3(0, 0, 0) },
     heart: { pos: new THREE.Vector3(-0.08, 0.46, 0.9), target: new THREE.Vector3(-0.08, 0.46, 0.09) },
     lungs: { pos: new THREE.Vector3(0, 0.5, 1.2), target: new THREE.Vector3(0, 0.5, 0.02) },
-    brain: { pos: new THREE.Vector3(0, 1.35, 0.9), target: new THREE.Vector3(0, 1.35, 0.05) }
+    brain: { pos: new THREE.Vector3(0, 1.35, 0.9), target: new THREE.Vector3(0, 1.35, 0.05) },
+    liver: { pos: new THREE.Vector3(0.15, 0.05, 0.9), target: new THREE.Vector3(0.15, 0.05, 0.06) }
   }), [])
 
   useFrame((state, delta) => {
@@ -647,6 +635,10 @@ function CameraController({ controlsRef }: { controlsRef: any }) {
       }
     }
     
+    // ── KEY FIX: Only move camera during active transitions ──
+    // When NOT transitioning, do nothing — let OrbitControls handle auto-rotate/user drag freely
+    if (!isTransitioning.current) return
+    
     let t = targets[selectedOrgan as keyof typeof targets] || targets.none
     if (selectedOrgan === 'custom' && customZoomTarget) {
       t = {
@@ -655,41 +647,107 @@ function CameraController({ controlsRef }: { controlsRef: any }) {
       }
     }
     
-    // Smoothly animate the focal target using frame-rate independent exponential decay
-    const lerpFactorPos = 1 - Math.pow(0.02, delta)
-    const lerpFactorY = 1 - Math.pow(0.13, delta)
+    const lerpSpeed = 1 - Math.pow(0.02, delta)
 
-    controlsRef.current.target.lerp(t.target, lerpFactorPos)
+    // Lerp the orbit focal point (only during transition)
+    controlsRef.current.target.lerp(t.target, lerpSpeed)
     
-    if (isTransitioning.current) {
-      if (selectedOrgan !== 'none') {
-        // Fly to specific inspection angle
-        camera.position.lerp(t.pos, lerpFactorPos)
-        
-        if (camera.position.distanceTo(t.pos) < 0.05) {
-          isTransitioning.current = false
-        }
-      } else {
-        // Return to full-body view while preserving current azimuthal rotation
-        const dir = camera.position.clone().sub(controlsRef.current.target).normalize()
-        if (dir.lengthSq() === 0) dir.set(0, 0, 1)
-        
-        const desiredPos = controlsRef.current.target.clone().add(dir.multiplyScalar(3.8))
-        // Gently pull the vertical angle back towards the equator (y=0) for a clean spin
-        desiredPos.y = THREE.MathUtils.lerp(desiredPos.y, 0, lerpFactorY)
-        
-        camera.position.lerp(desiredPos, lerpFactorPos)
-        
-        // Stop forcing the camera once we reach the baseline distance so OrbitControls can zoom freely
-        if (camera.position.distanceTo(desiredPos) < 0.05) {
-          isTransitioning.current = false
-        }
+    if (selectedOrgan !== 'none') {
+      // Fly to specific organ inspection angle
+      camera.position.lerp(t.pos, lerpSpeed)
+      
+      if (camera.position.distanceTo(t.pos) < 0.05 &&
+          controlsRef.current.target.distanceTo(t.target) < 0.05) {
+        isTransitioning.current = false
+      }
+    } else {
+      // Return to full-body view — pull back while preserving rotation angle
+      const dir = camera.position.clone().sub(controlsRef.current.target).normalize()
+      if (dir.lengthSq() === 0) dir.set(0, 0, 1)
+      
+      const desiredPos = t.target.clone().add(dir.multiplyScalar(3.8))
+      desiredPos.y = THREE.MathUtils.lerp(desiredPos.y, 0, 1 - Math.pow(0.13, delta))
+      
+      camera.position.lerp(desiredPos, lerpSpeed)
+      
+      if (camera.position.distanceTo(desiredPos) < 0.1 &&
+          controlsRef.current.target.distanceTo(t.target) < 0.05) {
+        isTransitioning.current = false
       }
     }
     
     controlsRef.current.update()
   })
   return null
+}
+
+// Error boundary to catch EffectComposer GL context crashes during HMR
+class PostProcessingBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+  componentDidCatch() {
+    // Silently retry after a tick — GL context will be ready on next mount
+    setTimeout(() => this.setState({ hasError: false }), 100)
+  }
+  render() {
+    if (this.state.hasError) return null
+    return this.props.children
+  }
+}
+
+// Post-processing effects with deferred GL validation + error boundary
+function PostProcessingEffects() {
+  const { gl } = useThree()
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    const check = () => {
+      try {
+        const ctx = gl.getContext()
+        const attrs = ctx?.getContextAttributes?.()
+        if (attrs != null) {
+          setReady(true)
+          return
+        }
+      } catch {}
+      requestAnimationFrame(check)
+    }
+    check()
+  }, [gl])
+
+  if (!ready) return null
+
+  return (
+    <EffectComposer>
+      <Bloom
+        intensity={1.2}
+        luminanceThreshold={0.2}
+        luminanceSmoothing={0.9}
+        mipmapBlur
+      />
+      <Vignette
+        offset={0.3}
+        darkness={0.7}
+        blendFunction={BlendFunction.NORMAL}
+      />
+    </EffectComposer>
+  )
+}
+
+function DeferredEffects() {
+  return (
+    <PostProcessingBoundary>
+      <PostProcessingEffects />
+    </PostProcessingBoundary>
+  )
 }
 
 function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
@@ -750,7 +808,7 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
   }
 
   // Brain synaptic particle simulation data
-  const brainParticlesCount = 80
+  const brainParticlesCount = 60
   const brainParticlesData = useMemo(() => {
     const temp = new Float32Array(brainParticlesCount * 3)
     const speeds = new Float32Array(brainParticlesCount * 3)
@@ -815,7 +873,7 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
     let targetBrainOpacity = selectedOrgan === 'none' || selectedOrgan === 'brain' ? activeOpacity : inactiveOpacity
     let targetLungOpacity = selectedOrgan === 'none' || selectedOrgan === 'lungs' ? activeOpacity : inactiveOpacity
     let targetHeartOpacity = selectedOrgan === 'none' || selectedOrgan === 'heart' ? activeOpacity : inactiveOpacity
-    let targetLiverOpacity = selectedOrgan === 'none' ? activeOpacity : inactiveOpacity
+    let targetLiverOpacity = selectedOrgan === 'none' || selectedOrgan === 'liver' ? activeOpacity : inactiveOpacity
 
     let brainEmissive = 1.2
     let lungEmissive = 1.2
@@ -1000,6 +1058,8 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       {/* 2. Detailed Skeletal Bones Column & Ribcage */}
       <DetailedSkeleton />
 
+      {/* 3-4. Vascular + Nervous Systems (non-interactive decorative) */}
+      <group raycast={() => {}}>
       {/* 3. Cardiovascular Vascular System (Arteries & Veins) */}
       <VascularBloodflow points={[[-0.08, 0.46, 0.09], [-0.43, 1.03, 0.02], [-0.62, 0.55, 0.01], [-0.78, 0.04, 0.0]]} color="#ff9900" />
       <VascularBloodflow points={[[-0.08, 0.46, 0.09], [0.43, 1.03, 0.02], [0.62, 0.55, 0.01], [0.78, 0.04, 0.0]]} color="#ff9900" />
@@ -1016,16 +1076,17 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       <Line points={[[0, 0.95, -0.05], [0.45, 1.05, 0], [0.62, 0.55, 0], [0.8, 0.05, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
       <Line points={[[0, -0.1, -0.05], [-0.2, -0.25, 0], [-0.24, -1.0, 0], [-0.25, -1.7, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
       <Line points={[[0, -0.1, -0.05], [0.2, -0.25, 0], [0.24, -1.0, 0], [0.25, -1.7, 0]]} color="#c040ff" lineWidth={0.6} transparent opacity={0.4} />
+      </group>
 
       {/* 5. BRAIN Mesh - Dedicated */}
       <group 
         position={[0, 1.4, 0]} 
-        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('brain') }}
+        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('brain'); useTelemetryStore.getState().setCurrentCondition('epilepsy') }}
         onPointerOver={(e) => { e.stopPropagation(); setCursor('pointer') }}
         onPointerOut={(e) => { e.stopPropagation(); setCursor('auto') }}
       >
         <mesh ref={brainMeshRef}>
-          <icosahedronGeometry args={[0.22, 2]} />
+          <icosahedronGeometry args={[0.22, 3]} />
           <meshStandardMaterial
             ref={brainMatRef}
             wireframe
@@ -1039,22 +1100,22 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
             metalness={0.1}
           />
         </mesh>
-        {/* Halo of 3 revolving neural orbits around head */}
-        <mesh ref={brainRing1Ref} rotation={[Math.PI / 3, 0, 0]}>
+        {/* Halo of 3 revolving neural orbits around head — excluded from raycasting */}
+        <mesh ref={brainRing1Ref} rotation={[Math.PI / 3, 0, 0]} raycast={() => {}}>
           <torusGeometry args={[0.38, 0.01, 8, 32]} />
           <meshBasicMaterial color="#c040ff" transparent opacity={0.8} blending={THREE.AdditiveBlending} />
         </mesh>
-        <mesh ref={brainRing2Ref} rotation={[Math.PI / 4, Math.PI / 4, 0]}>
+        <mesh ref={brainRing2Ref} rotation={[Math.PI / 4, Math.PI / 4, 0]} raycast={() => {}}>
           <torusGeometry args={[0.42, 0.007, 6, 24]} />
           <meshBasicMaterial color="#c040ff" transparent opacity={0.6} blending={THREE.AdditiveBlending} />
         </mesh>
-        <mesh ref={brainRing3Ref} rotation={[0, Math.PI / 6, Math.PI / 3]}>
+        <mesh ref={brainRing3Ref} rotation={[0, Math.PI / 6, Math.PI / 3]} raycast={() => {}}>
           <torusGeometry args={[0.46, 0.004, 6, 20]} />
           <meshBasicMaterial color="#c040ff" transparent opacity={0.5} blending={THREE.AdditiveBlending} />
         </mesh>
         
-        {/* Synaptic particles emitter around brain */}
-        <points ref={brainPointsRef}>
+        {/* Synaptic particles emitter around brain — excluded from raycasting */}
+        <points ref={brainPointsRef} raycast={() => {}}>
           <bufferGeometry>
             <bufferAttribute
               attach="attributes-position"
@@ -1074,7 +1135,7 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
 
       {/* 6. LUNGS Meshes & Inner Branching Bronchial Airway Trees - Dedicated */}
       <group 
-        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('lungs') }}
+        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('lungs'); useTelemetryStore.getState().setCurrentCondition('asthma') }}
         onPointerOver={(e) => { e.stopPropagation(); setCursor('pointer') }}
         onPointerOut={(e) => { e.stopPropagation(); setCursor('auto') }}
       >
@@ -1136,7 +1197,7 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       {/* 7. HEART Mesh with pulsing Aorta pipe - Dedicated */}
       <group 
         position={[-0.08, 0.46, 0.09]} 
-        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('heart') }}
+        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('heart'); useTelemetryStore.getState().setCurrentCondition('arrhythmia') }}
         onPointerOver={(e) => { e.stopPropagation(); setCursor('pointer') }}
         onPointerOut={(e) => { e.stopPropagation(); setCursor('auto') }}
       >
@@ -1153,25 +1214,65 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       <AortaTube opacity={targetHeartOpacity} />
 
       {/* 8. LIVER Mesh (Abdomen Right Lobe) - Dedicated */}
-      <mesh
-        ref={liverMeshRef}
-        position={[0.13, 0.12, 0.07]}
-        rotation={[0.2, -0.3, -0.1]}
+      <group
+        position={[0.15, 0.05, 0.06]}
+        onClick={(e) => { e.stopPropagation(); useTelemetryStore.getState().setSelectedOrgan('liver'); useTelemetryStore.getState().setCurrentCondition('diabetes') }}
+        onPointerOver={(e) => { e.stopPropagation(); setCursor('pointer') }}
+        onPointerOut={(e) => { e.stopPropagation(); setCursor('auto') }}
       >
-        <coneGeometry args={[0.15, 0.18, 4]} />
-        <meshStandardMaterial
-          ref={liverMatRef}
-          wireframe
-          transparent
-          opacity={0.7}
-          color="#ff9900"
-          emissive="#ff9900"
-          emissiveIntensity={1.0}
-          blending={THREE.AdditiveBlending}
-          roughness={0.8}
-          metalness={0.1}
-        />
-      </mesh>
+        {/* Main liver lobe */}
+        <mesh
+          ref={liverMeshRef}
+          rotation={[0.15, -0.2, -0.1]}
+        >
+          <sphereGeometry args={[0.14, 16, 16]} />
+          <meshStandardMaterial
+            ref={liverMatRef}
+            wireframe
+            transparent
+            opacity={0.7}
+            color="#ff9900"
+            emissive="#ff9900"
+            emissiveIntensity={1.0}
+            blending={THREE.AdditiveBlending}
+            roughness={0.8}
+            metalness={0.1}
+          />
+        </mesh>
+        {/* Smaller right lobe */}
+        <mesh position={[-0.08, 0.02, 0.02]} rotation={[0.1, 0.2, 0.15]}>
+          <sphereGeometry args={[0.08, 12, 12]} />
+          <meshStandardMaterial
+            wireframe
+            transparent
+            opacity={0.5}
+            color="#ff9900"
+            emissive="#ff9900"
+            emissiveIntensity={0.8}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      </group>
+
+      {/* ═══ NEW: Heart Pulse Wave Ring ═══ */}
+      <group raycast={() => {}}>
+        <HeartPulseRing />
+      </group>
+
+      {/* ═══ NEW: Brain Electric Arcs ═══ */}
+      <group raycast={() => {}}>
+        <BrainElectricArcs brainwaveFreq={brainwaveFreq} />
+      </group>
+
+      {/* ═══ NEW: Holographic Atmosphere ═══ */}
+      <group raycast={() => {}}>
+        <HolographicScanLine />
+        <HexGridFloor />
+        <AmbientDust count={80} />
+      </group>
+
+      {/* ═══ NEW: DNA Helix Decoration ═══ */}
+      {!isDashboard && <DNAHelix position={[2.2, -0.1, 0]} />}
 
       {/* 9. Glowing Bent 3D HUD Pointers / Leader Lines */}
       {/* Brain Pointer */}
@@ -1188,7 +1289,7 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       {/* A. NEURAL STRESS RESPONSE (Brain - Top Right) */}
       <Html position={[sideOffset, 1.4, 0]} center distanceFactor={isDashboard ? 3.2 : 4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          className={`font-mono select-none pointer-events-auto cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
+          className={`font-mono select-none pointer-events-none cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
             isDashboard 
               ? 'p-1.5 rounded-xs w-[128px] gap-0.5 border-[#c040ff]/60 shadow-[0_0_8px_rgba(192,64,255,0.18)]' 
               : 'p-3 rounded w-52 gap-1.5 border-[#c040ff] shadow-[0_0_15px_rgba(192,64,255,0.25)] opacity-100'
@@ -1222,7 +1323,7 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       {/* B. PULMONARY COMPENSATION (Lungs - Center Right) */}
       <Html position={[sideOffset, 0.5, 0]} center distanceFactor={isDashboard ? 3.2 : 4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          className={`font-mono select-none pointer-events-auto cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
+          className={`font-mono select-none pointer-events-none cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
             isDashboard 
               ? 'p-1.5 rounded-xs w-[128px] gap-0.5 border-[#00ccff]/60 shadow-[0_0_8px_rgba(0,204,255,0.18)]' 
               : 'p-3 rounded w-52 gap-1.5 border-[#00ccff] shadow-[0_0_15px_rgba(0,204,255,0.25)] opacity-100'
@@ -1257,7 +1358,7 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       {/* C. MYOCARDIAL STRESS (Heart - Center Left) */}
       <Html position={[-sideOffset, 0.46, 0]} center distanceFactor={isDashboard ? 3.2 : 4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          className={`font-mono select-none pointer-events-auto cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
+          className={`font-mono select-none pointer-events-none cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
             isDashboard 
               ? 'p-1.5 rounded-xs w-[128px] gap-0.5 border-[#ff2b56]/60 shadow-[0_0_8px_rgba(255,43,86,0.18)]' 
               : 'p-3 rounded w-52 gap-1.5 border-[#ff2b56] shadow-[0_0_15px_rgba(255,43,86,0.25)] opacity-100'
@@ -1292,7 +1393,7 @@ function HologramScene({ isDashboard = false }: { isDashboard?: boolean }) {
       {/* D. METABOLIC GLUCOSE CRISIS (Liver - Bottom Right) */}
       <Html position={[sideOffset, -0.4, 0]} center distanceFactor={isDashboard ? 3.2 : 4.8} style={{ pointerEvents: 'none' }}>
         <div 
-          className={`font-mono select-none pointer-events-auto cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
+          className={`font-mono select-none pointer-events-none cursor-default flex flex-col bg-[#080d0a]/92 text-slate-100 border transition-all duration-300 ${
             isDashboard 
               ? 'p-1.5 rounded-xs w-[128px] gap-0.5 border-[#ff9900]/60 shadow-[0_0_8px_rgba(255,153,0,0.18)]' 
               : 'p-3 rounded w-52 gap-1.5 border-[#ff9900] shadow-[0_0_15px_rgba(255,153,0,0.25)] opacity-100'
@@ -1372,6 +1473,13 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
         camera={{ position: [0, 0, 3.8], fov: 50 }}
         gl={{ antialias: true, alpha: transparent, preserveDrawingBuffer: true }}
         style={{ background: transparent ? 'transparent' : '#040806' }}
+        fallback={<div className="w-full h-full flex items-center justify-center text-xs font-mono text-slate-500">Loading 3D...</div>}
+        onPointerMissed={() => {
+          // Click on empty space = reset organ selection and zoom
+          useTelemetryStore.getState().setSelectedOrgan('none')
+          useTelemetryStore.getState().setCustomZoomTarget(null)
+          if (typeof document !== 'undefined') document.body.style.cursor = 'auto'
+        }}
       >
         <ambientLight intensity={0.25} />
         
@@ -1382,6 +1490,9 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
         
         <HologramScene isDashboard={transparent} />
         
+        {/* Post-Processing Effects (deferred to avoid GL context race) */}
+        <DeferredEffects />
+        
         <CameraController controlsRef={orbitRef} />
         
         <OrbitControls
@@ -1389,15 +1500,15 @@ export default function DigitalTwinScene({ transparent = false }: DigitalTwinSce
           enableDamping={!transparent}
           dampingFactor={0.08}
           rotateSpeed={0.8}
-          maxPolarAngle={Math.PI / 2 + 0.15}
+          maxPolarAngle={Math.PI / 2}
           minDistance={selectedOrgan === 'none' ? 1.6 : 0.5}
           maxDistance={8.0}
           enablePan={false}
           enableZoom={!transparent}
           enableRotate={!transparent}
           zoomSpeed={0.6}
-          autoRotate={!transparent}
-          autoRotateSpeed={0.8}
+          autoRotate={!transparent && selectedOrgan === 'none'}
+          autoRotateSpeed={0.6}
         />
       </Canvas>
     </div>

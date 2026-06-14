@@ -26,6 +26,9 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// Parse JSON bodies for all routes
+app.use(express.json());
+
 const dev = process.env.NODE_ENV !== 'production';
 const startNext = process.env.NODE_ENV === 'production' || process.env.UNIFIED_SERVER === 'true';
 let nextApp = null;
@@ -90,7 +93,8 @@ function createDefaultRecoveryBuffers() {
     heartRate: 0, spO2: 0, cognitiveLatency: 0, perclos: 0,
     microCorrections: 0, gForce: 0, pCO2: 0, suitPressure: 0,
     tremorAmplitude: 0, eda: 0, gripForce: 0, gripAsymmetry: 0,
-    alertness: 0, v2vLink: 0, respiratoryRate: 0
+    alertness: 0, v2vLink: 0, respiratoryRate: 0,
+    temperature: 0, pressure: 0
   };
 }
 
@@ -1318,7 +1322,6 @@ app.get('/api/stream/:mode', (req, res) => {
 });
 
 // Command POST endpoint — replaces WebSocket client→server messages
-app.use(express.json());
 app.post('/api/command', (req, res) => {
   const { type, track, cmd, sessionId } = req.body;
   const session = getOrCreateSession(sessionId);
@@ -1370,6 +1373,47 @@ server.on('upgrade', (req, socket, head) => {
     wss.emit('connection', ws, req);
   });
 });
+
+// ─── GRACEFUL SHUTDOWN ───────────────────────────────────────────────────────
+
+function gracefulShutdown(signal) {
+  console.log(`[S.P.H.E.R.E. Engine] Received ${signal}. Shutting down gracefully...`);
+  
+  // Close all SSE connections
+  sessions.forEach((session) => {
+    session.sseClients.forEach((client) => {
+      if (!client.writableEnded) {
+        client.end();
+      }
+    });
+  });
+
+  // Close all WebSocket connections
+  wss.clients.forEach((ws) => {
+    ws.close(1001, 'Server shutting down');
+  });
+
+  // Clear keepalive
+  clearInterval(keepAliveInterval);
+
+  // Destroy all sessions
+  sessions.forEach((_, id) => destroySession(id));
+
+  // Close HTTP server
+  server.close(() => {
+    console.log('[S.P.H.E.R.E. Engine] Server closed. Goodbye.');
+    process.exit(0);
+  });
+
+  // Force exit after 5s if connections don't close
+  setTimeout(() => {
+    console.warn('[S.P.H.E.R.E. Engine] Forcing exit after timeout.');
+    process.exit(1);
+  }, 5000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 const PORT = process.env.NEXT_PUBLIC_WS_PORT || process.env.PORT || 8080;
 

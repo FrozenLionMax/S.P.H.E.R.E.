@@ -2,14 +2,11 @@
 
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useRef } from 'react';
+import LoadingScreen from '@/components/LoadingScreen';
 
 const DynamicDigitalTwin = dynamic(() => import('@/components/DigitalTwinScene'), {
   ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex items-center justify-center text-[9px] font-mono text-slate-500">
-      LOADING 3D NEURAL TWIN...
-    </div>
-  )
+  loading: () => <LoadingScreen />
 });
 
 interface LazyDigitalTwinSceneProps {
@@ -21,15 +18,14 @@ export default function LazyDigitalTwinScene({ transparent = false }: LazyDigita
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Check for prefers-reduced-motion to potentially customize observer behaviour
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setIsInView(true);
-          observer.disconnect(); // Only trigger once
+          observer.disconnect();
         }
       },
-      { rootMargin: '120px' } // Pre-load slightly before entry
+      { rootMargin: '120px' }
     );
 
     if (containerRef.current) {
@@ -46,10 +42,7 @@ export default function LazyDigitalTwinScene({ transparent = false }: LazyDigita
       {isInView ? (
         <DynamicDigitalTwin transparent={transparent} />
       ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center text-[8px] font-mono text-slate-500 gap-1 bg-black/20">
-          <div className="w-2.5 h-2.5 border border-slate-700/50 border-t-transparent rounded-full animate-spin" />
-          <span>ESTABLISHING 3D BIOMETRIC SECTOR...</span>
-        </div>
+        <LoadingScreen />
       )}
     </div>
   );

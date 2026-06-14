@@ -210,7 +210,7 @@ export default function TelemetryConsole({
 
           <div className="flex flex-col gap-0.5">
             <div className="flex justify-between items-center text-[7.5px] font-mono">
-              <span className="text-slate-400">CABIN PRESSURE</span>
+              <span className="text-slate-400">{activeTrackKey === 'ASTRONAUT' ? 'SUIT PRESSURE' : 'CABIN PRESSURE'}</span>
               <span style={{ color: STATUS[pressureSt] }}>
                 {Math.round(
                   Math.max(
@@ -251,6 +251,37 @@ export default function TelemetryConsole({
           </div>
         </div>
       </div>
+
+      {/* Predictive Alert Banner */}
+      {(() => {
+        const predictions: { icon: string; msg: string; color: string }[] = [];
+        // SpO2 trending low
+        if (spo2 < 96.5 && spo2 >= 95) predictions.push({ icon: '🫁', msg: `SpO₂ drop to ${(spo2 - 1.2).toFixed(1)}% predicted in ~30s`, color: C.amber });
+        if (spo2 < 95) predictions.push({ icon: '🫁', msg: 'CRITICAL: SpO₂ desaturation active', color: C.red });
+        // HR trending high
+        if (hr > 95 && hr < 120) predictions.push({ icon: '❤️', msg: `Tachycardia threshold in ~${Math.round((120 - hr) / 2)}s`, color: C.amber });
+        // Latency rising
+        if (lat > 320 && lat < 430) predictions.push({ icon: '🧠', msg: `Cognitive latency rising — ${Math.round((430 - lat) / 5)}s to WARN`, color: C.amber });
+        // Track-specific
+        if (activeTrackKey === 'PILOT' && envMetric > 5) predictions.push({ icon: '⚡', msg: `G-LOC risk ${Math.min(100, Math.round((envMetric / 9) * 100))}% — anti-G suit active`, color: envMetric > 7 ? C.red : C.amber });
+        if (activeTrackKey === 'TRUCKER' && envMetric < 88) predictions.push({ icon: '😴', msg: `Drowsiness index rising — alertness ${Math.round(envMetric)}%`, color: C.amber });
+        if (activeTrackKey === 'TRAIN_PILOT' && envMetric > 280) predictions.push({ icon: '👁️', msg: `PERCLOS elevated — fatigue intervention suggested`, color: C.amber });
+
+        if (predictions.length === 0) return null;
+        return (
+          <div className="shrink-0 border-b" style={{ borderColor: 'var(--border)', background: 'rgba(0,0,0,0.3)' }}>
+            <div className="px-3 py-1.5 flex items-center gap-1">
+              <span className="text-[7px] font-mono tracking-[0.2em] uppercase font-semibold" style={{ color: C.amber }}>⚠ PREDICTIVE</span>
+            </div>
+            {predictions.slice(0, 2).map((p, i) => (
+              <div key={i} className="px-3 py-1 flex items-center gap-2 text-[8px] font-mono" style={{ color: p.color }}>
+                <span>{p.icon}</span>
+                <span className="opacity-80">{p.msg}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Scrolling Log Output Console */}
       <div 

@@ -6,7 +6,7 @@ import { useTelemetry } from '@/lib/useTelemetry';
 import { useRouter } from 'next/navigation';
 
 // Constants & Helpers
-import { C, TRACK_CONFIGS, PROFILE_METRICS, PROFILE_HARDWARE, TrackKey, HEALTH_SCORE_WEIGHTS, HEALTH_INDEX_BOUNDS } from '@/lib/constants';
+import { C, TRACK_CONFIGS, PROFILE_METRICS, PROFILE_SENSORS, SensorDef, TrackKey, HEALTH_SCORE_WEIGHTS, HEALTH_INDEX_BOUNDS } from '@/lib/constants';
 import { fmt, nowTime, classify, pct } from '@/lib/helpers';
 
 // Extracted UI Atoms & Cockpit Widgets
@@ -26,6 +26,13 @@ import Sidebar from '@/components/Sidebar';
 import TelemetryConsole from '@/components/TelemetryConsole';
 import { useTelemetryStore } from '@/lib/useTelemetryStore';
 import OperatorMap from '@/components/OperatorMap';
+import DemoOverlay from '@/components/DemoOverlay';
+import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog';
+import BlackBoxPlayback from '@/components/BlackBoxPlayback';
+import IncidentReportModal from '@/components/IncidentReportModal';
+import LoadingScreen from '@/components/LoadingScreen';
+import { useAudioEngine } from '@/lib/useAudioEngine';
+import { useKeyboardShortcuts } from '@/lib/useKeyboardShortcuts';
 
 function getOrganForMetricKey(key: string): 'none' | 'heart' | 'lungs' | 'brain' {
   if (['heartRate', 'bpm', 'pwtt'].includes(key)) return 'heart';
@@ -56,6 +63,12 @@ export default function Page() {
   const [activeTrackKey, setActiveTrackKey] = useState<TrackKey>('PILOT');
   const [mounted, setMounted] = useState(false);
   const [isOnboarded, setIsOnboarded] = useState(false);
+  const [isLoading, setIsLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return !sessionStorage.getItem('sphere-loaded');
+    }
+    return true;
+  });
 
   // Zustand state triggers for 3D Hologram interaction
   const selectedOrgan = useTelemetryStore((s) => s.selectedOrgan);
@@ -63,10 +76,23 @@ export default function Page() {
   const updateTelemetryFrame = useTelemetryStore((s) => s.updateTelemetryFrame);
   const storeActiveProfile = useTelemetryStore((s) => s.activeUserProfile);
 
+  // Integrate audio engine (heartbeat + crisis alerts + organ clicks)
+  const { isMuted: audioMuted, toggleMute: toggleAudioMute } = useAudioEngine();
+
+  // Integrate keyboard shortcuts (arrow keys, number keys for organs)
+  useKeyboardShortcuts();
+
   useEffect(() => {
     setMounted(true);
-    if (typeof window !== 'undefined' && window.location.search.includes('onboarded=true')) {
-      setIsOnboarded(true);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('onboarded') || params.has('from3d')) {
+        setIsOnboarded(true);
+      }
+      // If returning from 3D twin, skip loading
+      if (params.has('from3d') || sessionStorage.getItem('sphere-loaded')) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -172,14 +198,6 @@ export default function Page() {
   useEffect(() => {
     useTelemetryStore.getState().setActiveUserProfile(activeTrackKey);
   }, [activeTrackKey]);
-
-  // Sync store activeUserProfile changes back to local activeTrackKey (e.g. from 2D organ click)
-  useEffect(() => {
-    if (storeActiveProfile && storeActiveProfile !== activeTrackKey && storeActiveProfile in TRACK_CONFIGS) {
-      setActiveTrackKey(storeActiveProfile as TrackKey);
-      setTrack(storeActiveProfile as TrackKey);
-    }
-  }, [storeActiveProfile, activeTrackKey, setTrack]);
 
   // Track change handler
   const handleTrackChange = useCallback((key: TrackKey) => {
@@ -540,13 +558,61 @@ All physical telemetry pipelines verified compile-safe and responsive.
   const temp = displaySample.temperature ?? 98.6;
   const pressure = displaySample.pressure ?? (activeTrackKey === 'ASTRONAUT' ? 4.3 : 14.7);
 
-  const subStatus = displaySample.subsystems || {
-    neuralInterface: 'ONLINE',
-    biometricSensors: 'ONLINE',
-    telemetryRelay: 'ONLINE',
-    cognitiveProc: 'ONLINE',
-    atmosMonitor: 'ONLINE'
-  };
+  // ── Intelligent Subsystem Status Engine ──
+  // Each subsystem's status is derived from real telemetry signals
+  const computeSubStatus = () => {
+    const base = displaySample.subsystems
+
+    // Neural Interface — driven by cognitive latency & brainwave stability
+    // High latency = degraded neural link, extreme = critical
+    const neuralInterface = (() => {
+      if (base?.neuralInterface === 'OFFLINE') return 'OFFLINE'
+      if (lat > 430) return 'CRITICAL'
+      if (lat > 380) return 'DEGRADED'
+      if (crisis) return 'DEGRADED'
+      return 'ONLINE'
+    })()
+
+    // Biometric Sensors — driven by SpO2 + heart rate signal quality
+    // If vitals are at extreme ranges, sensors are under stress
+    const biometricSensors = (() => {
+      if (base?.biometricSensors === 'OFFLINE') return 'OFFLINE'
+      if (spo2 < 88 || hr > 150) return 'CRITICAL'
+      if (spo2 < 93 || hr > 120 || hr < 50) return 'DEGRADED'
+      return 'ONLINE'
+    })()
+
+    // Telemetry Relay — driven by connection state + data freshness
+    const telemetryRelay = (() => {
+      if (!connected) return 'OFFLINE'
+      if (base?.telemetryRelay === 'CRITICAL') return 'CRITICAL'
+      if (crisis) return 'LATENT'
+      return 'ONLINE'
+    })()
+
+    // Cognitive Processing — driven by cognitive latency + stress load
+    // Simulates the AI analysis pipeline under load
+    const cognitiveProc = (() => {
+      if (base?.cognitiveProc === 'OFFLINE') return 'OFFLINE'
+      if (lat > 400 && crisis) return 'CRITICAL'
+      if (lat > 350 || crisis) return 'DEGRADED'
+      return 'ONLINE'
+    })()
+
+    // Atmospheric Monitor — driven by environmental metric
+    // High env readings = atmospheric stress
+    const atmosMonitor = (() => {
+      if (base?.atmosMonitor === 'OFFLINE') return 'OFFLINE'
+      const threshold = trackConf.baseEnvVal
+      if (envMetric > threshold * 2) return 'CRITICAL'
+      if (envMetric > threshold * 1.5) return 'DEGRADED'
+      return 'ONLINE'
+    })()
+
+    return { neuralInterface, biometricSensors, telemetryRelay, cognitiveProc, atmosMonitor }
+  }
+
+  const subStatus = computeSubStatus()
 
   const getSubColor = (status: string) => {
     if (status === 'ONLINE') return C.green;
@@ -606,14 +672,28 @@ All physical telemetry pipelines verified compile-safe and responsive.
         activeTrackKey={activeTrackKey}
         handleTrackChange={handleTrackChange}
         trackConf={trackConf}
-        setIsOnboarded={setIsOnboarded}
+        setIsOnboarded={(v: boolean) => { setIsOnboarded(v); setIsLoading(true); }}
         router={router}
       />
     );
   }
 
+  if (isLoading) {
+    return (
+      <div className="h-screen w-screen bg-[#040806]">
+        <LoadingScreen onComplete={() => { sessionStorage.setItem('sphere-loaded', '1'); setIsLoading(false); }} />
+      </div>
+    );
+  }
+
   return (
-    <div className={`flex flex-col h-screen overflow-hidden relative ${crtEnabled ? 'crt-container crt-flicker' : ''}`} style={{ backgroundColor: '#000000' }}>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.6 }}
+      className={`flex flex-col h-screen overflow-x-hidden overflow-y-auto lg:overflow-hidden relative ${crtEnabled ? 'crt-container crt-flicker' : ''}`}
+      style={{ backgroundColor: '#000000' }}
+    >
       <LandingBackground themeColor={trackConf.themeColor} />
       <Gyroscope isAstronaut={activeTrackKey === "ASTRONAUT"} />
       
@@ -693,10 +773,12 @@ All physical telemetry pipelines verified compile-safe and responsive.
       />
 
       <div 
+        data-layout="main-grid"
         className="flex flex-col lg:flex-row flex-1 overflow-y-auto lg:overflow-hidden relative z-20 transition-all duration-300"
         style={{ paddingTop: crisis ? 31 : 0 }}
       >
         <motion.main
+          data-layout="main-content"
           className="flex flex-col w-full lg:w-[68%] shrink-0 lg:overflow-y-auto"
           style={{ borderRight: '1px solid var(--border)' }}
           initial={{ opacity: 0, x: -14 }}
@@ -764,7 +846,7 @@ All physical telemetry pipelines verified compile-safe and responsive.
             </div>
 
             {/* Reorganized Dashboard Grid: Left tall column for Autonomous Telemetry Console, right column for stacked widgets */}
-            <div className="grid gap-3 grid-cols-1 lg:grid-cols-[380px_1fr]">
+            <div className="grid gap-3 grid-cols-1 lg:grid-cols-[minmax(300px,380px)_1fr]">
               {/* Left Column: Autonomous Console (SPO2, HR, ENV, LAT + Logs) */}
               <GlassPanel className="rounded-xl overflow-hidden relative flex flex-col h-[460px] min-h-[460px] max-h-[460px]" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                 <div className="flex items-center justify-between px-4 py-3 shrink-0 relative z-10" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }}>
@@ -800,7 +882,7 @@ All physical telemetry pipelines verified compile-safe and responsive.
               {/* Right Column: Other Widgets stacked in smaller spaces */}
               <div className="flex flex-col gap-2.5">
                 {/* Vitals Trend and Cardiac Waveform */}
-                <div className="grid gap-2.5 grid-cols-1 xl:grid-cols-[1fr_420px]">
+                <div className="grid gap-2.5 grid-cols-1 xl:grid-cols-[1fr_minmax(300px,420px)]">
                   <GlassPanel className="rounded-xl overflow-hidden" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                     <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
                       <div className="flex items-center gap-4">
@@ -821,7 +903,7 @@ All physical telemetry pipelines verified compile-safe and responsive.
                       <ECG
                         crisis={crisis}
                         hr={hr}
-                        width={396}
+                        width={0}
                         height={76}
                         glow={true}
                         audioEnabled={audioEnabled}
@@ -829,6 +911,8 @@ All physical telemetry pipelines verified compile-safe and responsive.
                         audioCtx={audioCtx}
                         volume={volume}
                         onBeat={triggerAudioPulse}
+                        responsive={true}
+                        trackKey={activeTrackKey}
                       />
                     </div>
                   </GlassPanel>
@@ -839,53 +923,90 @@ All physical telemetry pipelines verified compile-safe and responsive.
                   <GlassPanel className="rounded-xl p-3.5 flex flex-col gap-2.5" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
                     <SectionLabel>Sensor Hardware</SectionLabel>
                     <TrackVisualizer trackKey={activeTrackKey} crisis={crisis} lastSample={displaySample} />
-                    {PROFILE_HARDWARE[activeTrackKey].map((h, i) => (
-                      <div key={i} className="flex flex-col gap-0.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>
-                            {h.label}
-                          </span>
-                          <span className="text-[10px] font-mono font-semibold" style={{ color: crisis ? C.amber : C.green }}>
-                            {crisis && i === 1 ? 'INTERVENING' : h.value}
-                          </span>
+                    {PROFILE_SENSORS[activeTrackKey].map((sensor, i) => {
+                      const trackData = displaySample.trackData?.[activeTrackKey] || {}
+                      const raw = trackData[sensor.key] ?? (displaySample as any)[sensor.key]
+                      // Provide realistic fallbacks for sensors that may not have server data
+                      const fallbacks: Record<string, number> = {
+                        suitPressure: 4.3, co2Level: 2.8, temperature: 98.6,
+                        spO2: 98, gForce: 1.2, cabinAlt: 8000,
+                        tremorAmplitude: 0.02, edaLevel: 2.1,
+                        perclos: 3.5, gripForce: 22, vibration: 3.2,
+                        alertness: 96, meshSignal: -42
+                      }
+                      const value = raw ?? fallbacks[sensor.key] ?? 0
+                      const [min, max] = sensor.nominal
+                      const inRange = value >= min && value <= max
+                      const warnRange = (max - min) * 0.15
+                      const nearEdge = value < min - warnRange || value > max + warnRange
+                      const status = crisis && i === 0 ? 'CRITICAL' : nearEdge ? 'CRITICAL' : !inRange ? 'WARNING' : 'NOMINAL'
+                      const statusColor = status === 'NOMINAL' ? C.green : status === 'WARNING' ? C.amber : C.red
+                      const display = sensor.format ? sensor.format(value) : String(Math.round(value * 100) / 100)
+                      // Bar fill: how far through the nominal range (clamped 0-100)
+                      const range = max - min || 1
+                      const barPct = Math.max(5, Math.min(100, ((value - min) / range) * 100))
+
+                      return (
+                        <div key={i} className="flex flex-col gap-0.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: C.muted }}>
+                              {sensor.label}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-mono tabular-nums font-semibold" style={{ color: C.fg }}>
+                                {display}
+                                <span className="text-[8px] ml-0.5" style={{ color: C.muted }}>{sensor.unit}</span>
+                              </span>
+                              <span className="text-[7px] font-mono font-bold px-1 py-px rounded" style={{
+                                color: statusColor,
+                                background: `${statusColor}15`,
+                                border: `1px solid ${statusColor}30`
+                              }}>
+                                {status}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                            <motion.div
+                              className="h-full rounded-full"
+                              style={{ background: statusColor }}
+                              animate={{ width: `${barPct}%` }}
+                              transition={{ duration: 0.8 }}
+                            />
+                          </div>
                         </div>
-                        <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                          <motion.div
-                            className="h-full rounded-full"
-                            style={{ background: crisis ? C.amber : C.green }}
-                            animate={{ width: crisis ? '100%' : '85%' }}
-                            transition={{ duration: 0.8 }}
-                          />
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </GlassPanel>
 
-                  <GlassPanel className="rounded-xl overflow-hidden flex flex-col justify-between" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
-                    <div className="px-4 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <GlassPanel className="rounded-xl overflow-hidden flex flex-col" style={{ border: `1px solid ${crisis ? '#ff3b5c80' : 'var(--border)'}` }}>
+                    <div className="px-4 py-1.5 shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
                       <span className="text-[9px] font-mono tracking-[0.2em] uppercase" style={{ color: C.muted }}>Subsystems</span>
                     </div>
-                    <div className="flex flex-col justify-center gap-2 p-3.5 flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px]" style={{ color: C.fg }}>Neural Interface</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: getSubColor(subStatus.neuralInterface) }}>{subStatus.neuralInterface}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px]" style={{ color: C.fg }}>Biometric Sensors</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: getSubColor(subStatus.biometricSensors) }}>{subStatus.biometricSensors}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px]" style={{ color: C.fg }}>Telemetry Relay</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: !connected ? C.red : getSubColor(subStatus.telemetryRelay) }}>{!connected ? 'OFFLINE' : subStatus.telemetryRelay}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px]" style={{ color: C.fg }}>Cognitive Proc.</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: getSubColor(subStatus.cognitiveProc) }}>{subStatus.cognitiveProc}</span>
-                      </div>
-                      <div className="flex items-center justify-between border-t border-white/5 pt-1.5 mt-0.5">
-                        <span className="text-[10px]" style={{ color: C.fg }}>Atmos Monitor</span>
-                        <span className="text-[9px] font-mono font-semibold" style={{ color: getSubColor(subStatus.atmosMonitor) }}>{subStatus.atmosMonitor}</span>
-                      </div>
+                    <div className="flex flex-col gap-1.5 px-3.5 py-2">
+                      {([
+                        { label: 'Neural Interface', key: 'neuralInterface' as const },
+                        { label: 'Biometric Sensors', key: 'biometricSensors' as const },
+                        { label: 'Telemetry Relay', key: 'telemetryRelay' as const },
+                        { label: 'Cognitive Proc.', key: 'cognitiveProc' as const },
+                        { label: 'Atmos Monitor', key: 'atmosMonitor' as const },
+                      ]).map(({ label, key }) => {
+                        const status = subStatus[key]
+                        const color = getSubColor(status)
+                        const isPulsing = status === 'CRITICAL' || status === 'DEGRADED' || status === 'LATENT'
+                        return (
+                          <div key={key} className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full shrink-0 ${isPulsing ? 'animate-pulse' : ''}`}
+                                style={{ background: color, boxShadow: `0 0 4px ${color}` }}
+                              />
+                              <span className="text-[10px] whitespace-nowrap" style={{ color: C.fg }}>{label}</span>
+                            </div>
+                            <span className="text-[9px] font-mono font-bold tracking-wider" style={{ color }}>{status}</span>
+                          </div>
+                        )
+                      })}
                     </div>
                   </GlassPanel>
 
@@ -932,447 +1053,34 @@ All physical telemetry pipelines verified compile-safe and responsive.
         />
       </div>
 
-      {/* Keyboard Shortcuts Dialog Overlay */}
-      <AnimatePresence>
-        {showShortcuts && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-md"
-            onClick={() => setShowShortcuts(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              transition={{ type: 'spring', duration: 0.5 }}
-              className="w-full max-w-md p-6 rounded-xl border border-white/10 glass-panel shadow-2xl relative"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
-                onClick={() => setShowShortcuts(false)}
-                aria-label="Dismiss help dialog"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+      {/* Keyboard Shortcuts Dialog */}
+      <KeyboardShortcutsDialog show={showShortcuts} onClose={() => setShowShortcuts(false)} />
 
-              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-white/5">
-                <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-                <h3 className="text-sm font-semibold tracking-wider font-mono text-white uppercase">
-                  S.P.H.E.R.E. Keybindings
-                </h3>
-              </div>
+      {/* Demo Black Box Recorder Overlay */}
+      <DemoOverlay demoActive={demoActive} demoTime={demoTime} onStop={stopDemo} />
 
-              <div className="flex flex-col gap-3.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-mono text-slate-300">Switch Profiles</span>
-                  <div className="flex gap-1">
-                    {['1', '2', '3', '4', '5'].map((k) => (
-                      <kbd key={k} className="px-1.5 py-0.5 rounded border border-white/15 bg-white/5 text-[9px] font-mono font-bold text-white shadow-sm">
-                        {k}
-                      </kbd>
-                    ))}
-                  </div>
-                </div>
-                <p className="text-[9px] text-slate-500 -mt-2 leading-relaxed font-mono">
-                  (1: Astronaut | 2: Pilot | 3: Surgeon | 4: Train Pilot | 5: Trucker)
-                </p>
-
-                <div className="flex items-center justify-between border-t border-white/5 pt-3">
-                  <span className="text-[11px] font-mono text-slate-300">Trigger Crisis</span>
-                  <kbd className="px-2 py-0.5 rounded border border-red-500/30 bg-red-500/10 text-[9px] font-mono font-bold text-red-400 uppercase shadow-sm">
-                    C
-                  </kbd>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-mono text-slate-300">Resolve Crisis</span>
-                  <kbd className="px-2 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-[9px] font-mono font-bold text-emerald-400 uppercase shadow-sm">
-                    R
-                  </kbd>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-white/5 pt-3">
-                  <span className="text-[11px] font-mono text-slate-300">Toggle System Audio</span>
-                  <kbd className="px-2 py-0.5 rounded border border-white/15 bg-white/5 text-[9px] font-mono font-bold text-white uppercase shadow-sm">
-                    A
-                  </kbd>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-mono text-slate-300">Pause / Resume Telemetry</span>
-                  <kbd className="px-3 py-0.5 rounded border border-white/15 bg-white/5 text-[9px] font-mono font-bold text-white uppercase shadow-sm">
-                    Space
-                  </kbd>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-white/5 pt-3">
-                  <span className="text-[11px] font-mono text-slate-300">Toggle Help Overlay</span>
-                  <kbd className="px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-[9px] font-mono font-bold text-amber-400 uppercase shadow-sm">
-                    ?
-                  </kbd>
-                </div>
-              </div>
-
-              <div className="mt-5 text-center">
-                <span className="text-[9px] text-slate-500 font-mono tracking-wider">
-                  Press <kbd className="px-1 py-0.2 rounded border border-white/10 bg-white/5 font-bold">ESC</kbd> or click outside to dismiss
-                </span>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ███ DEMO — BLACK BOX FLIGHT RECORDER POPUP ███ */}
-      <AnimatePresence>
-        {demoActive && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] flex items-end justify-center pb-6 pointer-events-none"
-          >
-            <motion.div
-              initial={{ y: 60, opacity: 0, scale: 0.95 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 60, opacity: 0, scale: 0.95 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 26 }}
-              className="pointer-events-auto w-[420px] max-w-[95vw] rounded-xl border overflow-hidden"
-              style={{
-                background: 'rgba(6, 8, 14, 0.95)',
-                backdropFilter: 'blur(24px) saturate(1.4)',
-                borderColor: demoTime >= 20 && demoTime < 40 ? 'rgba(255,59,92,0.45)' : 'rgba(0,212,255,0.25)',
-                boxShadow: demoTime >= 20 && demoTime < 40 
-                  ? '0 8px 40px rgba(255,59,92,0.2), 0 0 0 1px rgba(255,59,92,0.08)' 
-                  : '0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,212,255,0.06)'
-              }}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.35)' }}>
-                <div className="flex items-center gap-2.5">
-                  <motion.div 
-                    className="w-2 h-2 rounded-full"
-                    style={{ background: '#ff3b5c', boxShadow: '0 0 8px rgba(255,59,92,0.6)' }}
-                    animate={{ opacity: [1, 0.15, 1] }}
-                    transition={{ duration: 0.8, repeat: Infinity }}
-                  />
-                  <span className="text-[9px] font-mono font-bold tracking-[0.25em] uppercase" style={{ color: '#ff3b5c' }}>REC</span>
-                  <span className="text-[7px] font-mono tracking-[0.15em] uppercase" style={{ color: 'rgba(255,255,255,0.25)' }}>BLACK BOX RECORDER</span>
-                </div>
-                <span className="text-[10px] font-mono tabular-nums font-bold" style={{ color: C.cyan }}>
-                  T+{String(Math.floor(demoTime / 60)).padStart(2, '0')}:{String(demoTime % 60).padStart(2, '0')}
-                </span>
-              </div>
-
-              {/* Phase Timeline */}
-              <div className="px-4 pt-3 pb-1">
-                <div className="flex items-center gap-[2px]">
-                  {[
-                    { label: 'BASE', start: 0, end: 10, color: C.cyan },
-                    { label: 'DRIFT', start: 10, end: 20, color: C.amber },
-                    { label: 'CRISIS', start: 20, end: 30, color: C.red },
-                    { label: 'OVRD', start: 30, end: 40, color: C.red },
-                    { label: 'RECV', start: 40, end: 50, color: C.green },
-                    { label: 'OK', start: 50, end: 60, color: C.green },
-                  ].map((phase, i) => {
-                    const isActive = demoTime >= phase.start && demoTime < phase.end;
-                    const isPast = demoTime >= phase.end;
-                    return (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
-                        <div className="w-full h-[5px] rounded-sm relative overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                          <motion.div
-                            className="h-full rounded-sm"
-                            style={{ background: isPast || isActive ? phase.color : 'transparent', opacity: isPast ? 0.5 : 1 }}
-                            animate={{ width: isActive ? `${((demoTime - phase.start) / (phase.end - phase.start)) * 100}%` : isPast ? '100%' : '0%' }}
-                            transition={{ duration: 0.5 }}
-                          />
-                          {isActive && (
-                            <motion.div
-                              className="absolute top-0 right-0 w-[3px] h-full rounded-sm"
-                              style={{ background: 'white', boxShadow: `0 0 8px ${phase.color}` }}
-                              animate={{ opacity: [1, 0.3, 1] }}
-                              transition={{ duration: 0.6, repeat: Infinity }}
-                            />
-                          )}
-                        </div>
-                        <span className="text-[6px] font-mono tracking-wider uppercase" style={{ 
-                          color: isActive ? phase.color : isPast ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)',
-                          fontWeight: isActive ? 700 : 400
-                        }}>
-                          {phase.label}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Live Event Log */}
-              <div className="px-4 py-2.5">
-                <div className="rounded-lg px-3 py-2.5" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                  <div className="flex items-start gap-2.5">
-                    <motion.div 
-                      className="w-1.5 h-1.5 rounded-full mt-[3px] flex-shrink-0"
-                      style={{ background: demoTime >= 20 && demoTime < 40 ? C.red : C.cyan, boxShadow: `0 0 6px ${demoTime >= 20 && demoTime < 40 ? C.red : C.cyan}` }}
-                      animate={{ scale: [1, 1.5, 1] }}
-                      transition={{ duration: 1.0, repeat: Infinity }}
-                    />
-                    <div className="flex flex-col gap-0.5 min-w-0">
-                      <span className="text-[7px] font-mono tracking-wider uppercase" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                        {demoTime < 10 && 'TELEMETRY INIT'}
-                        {demoTime >= 10 && demoTime < 20 && 'ANOMALY DETECTION'}
-                        {demoTime >= 20 && demoTime < 30 && 'CRISIS PROTOCOL'}
-                        {demoTime >= 30 && demoTime < 40 && 'OVERRIDE ACTIVE'}
-                        {demoTime >= 40 && demoTime < 50 && 'RECOVERY SEQUENCE'}
-                        {demoTime >= 50 && 'MISSION COMPLETE'}
-                      </span>
-                      <span className="text-[9px] font-mono leading-relaxed" style={{ color: demoTime >= 20 && demoTime < 40 ? C.red : 'rgba(255,255,255,0.6)' }}>
-                        {demoTime < 5 && 'Calibrating biosensors... Heart rate locked at 75 BPM.'}
-                        {demoTime >= 5 && demoTime < 10 && 'All channels nominal. SpO₂ 98.2% — streaming baseline.'}
-                        {demoTime >= 10 && demoTime < 15 && 'Z-Score drift on SpO₂ channel: σ = 1.4 → monitoring.'}
-                        {demoTime >= 15 && demoTime < 20 && '⚠ Heart rate trending +12% above rolling mean.'}
-                        {demoTime >= 20 && demoTime < 25 && '⛔ SpO₂ dropped below 83% — Auto-GCAS engaging.'}
-                        {demoTime >= 25 && demoTime < 30 && '⛔ Control stick LOCKED. Emergency pull-up initiated.'}
-                        {demoTime >= 30 && demoTime < 35 && '⛔ Manual controls bypassed. Cabin pressurization max.'}
-                        {demoTime >= 35 && demoTime < 40 && '⛔ Descent at 3000 ft/min. MAYDAY on 121.5 MHz.'}
-                        {demoTime >= 40 && demoTime < 45 && 'Recovery protocol engaged. SpO₂ climbing → 91%.'}
-                        {demoTime >= 45 && demoTime < 50 && 'Heart rate normalizing: 98 → 82 BPM. Disengaging AP.'}
-                        {demoTime >= 50 && demoTime < 55 && '✓ All vitals nominal. Override disengaged.'}
-                        {demoTime >= 55 && '✓ HOMEOSTASIS RESTORED — Black box saved.'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between px-4 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(0,0,0,0.2)' }}>
-                <span className="text-[7px] font-mono tracking-wider uppercase" style={{ 
-                  color: demoTime >= 20 && demoTime < 40 ? C.red : C.green 
-                }}>
-                  {demoTime < 10 && '● NOMINAL'}
-                  {demoTime >= 10 && demoTime < 20 && '● DRIFT DETECTED'}
-                  {demoTime >= 20 && demoTime < 40 && '● CRITICAL — OVERRIDE'}
-                  {demoTime >= 40 && demoTime < 50 && '● RECOVERING'}
-                  {demoTime >= 50 && '● ALL SYSTEMS GO'}
-                </span>
-                <button
-                  onClick={stopDemo}
-                  className="px-3 py-1 text-[8px] font-mono font-bold tracking-[0.15em] uppercase rounded-md cursor-pointer select-none transition-all hover:brightness-125"
-                  style={{ background: 'rgba(255,59,92,0.12)', color: C.red, border: '1px solid rgba(255,59,92,0.25)' }}
-                >
-                  ■ STOP REC
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Guided Scenario Nominal Success Popup Overlay */}
-      <AnimatePresence>
-        {demoActive && demoTime >= 50 && demoTime < 60 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed inset-0 z-[10000] flex items-center justify-center pointer-events-none"
-          >
-            <div 
-              className="p-8 rounded-xl border border-emerald-500/40 glass-panel shadow-2xl flex flex-col items-center gap-3"
-              style={{
-                background: 'rgba(8, 20, 16, 0.9)',
-                backdropFilter: 'blur(20px)',
-                boxShadow: '0 0 40px rgba(0, 229, 153, 0.15)'
-              }}
-            >
-              <motion.div 
-                className="w-12 h-12 rounded-full border-2 border-emerald-400 flex items-center justify-center mb-1"
-                animate={{ scale: [1, 1.15, 1] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-              >
-                <svg className="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                </svg>
-              </motion.div>
-              <h2 className="text-xl font-bold tracking-[0.25em] font-mono text-emerald-400 uppercase">
-                ALL SYSTEMS NOMINAL
-              </h2>
-              <span className="text-[9px] font-mono text-slate-400 uppercase tracking-widest text-center max-w-xs leading-relaxed">
-                Biometric homeostasis restored. Auto-override offline. Flight deck control returned to manual.
-              </span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Black Box Playback Scrubber Control Bar */}
-      <AnimatePresence>
-        {isPlaybackActive && (
-          <motion.div
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 26 }}
-            className="fixed bottom-4 left-4 right-4 z-[9999] p-3.5 rounded-xl border border-amber-500/30 glass-panel shadow-2xl flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between animate-none"
-            style={{
-              background: 'rgba(12, 10, 8, 0.9)',
-              backdropFilter: 'blur(20px) saturate(1.2)'
-            }}
-          >
-            <div className="flex items-center gap-3 shrink-0 font-mono">
-              <motion.div 
-                className="w-2.5 h-2.5 rounded-full bg-amber-500"
-                animate={{ scale: [1, 1.25, 1], opacity: [1, 0.5, 1] }}
-                transition={{ duration: 1.2, repeat: Infinity }}
-              />
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">
-                  BLACK BOX REPLAY
-                </span>
-                <span className="text-[8px] text-slate-400 mt-0.5">
-                  TIME INDEX: {recordedSamples.length - 1 - playbackIndex}s AGO
-                </span>
-              </div>
-            </div>
-
-            <div className="flex-1 px-4 flex items-center gap-3">
-              <span className="text-[8.5px] font-mono text-slate-500">START</span>
-              <input
-                type="range"
-                min={0}
-                max={Math.max(0, recordedSamples.length - 1)}
-                value={playbackIndex}
-                onChange={(e) => {
-                  setPlaybackIndex(parseInt(e.target.value));
-                  setIsPlaybackPlaying(false);
-                }}
-                className="flex-1 cursor-pointer"
-                style={{
-                  accentColor: '#f59e0b',
-                  height: '4px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '2px',
-                  outline: 'none',
-                  WebkitAppearance: 'none'
-                }}
-              />
-              <span className="text-[8.5px] font-mono text-slate-500">
-                {playbackIndex + 1}/{recordedSamples.length} FRAME
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
-              <button
-                onClick={() => {
-                  setIsPlaybackPlaying(false);
-                  setPlaybackIndex((prev) => Math.max(0, prev - 1));
-                }}
-                className="p-1 px-2.5 text-[8.5px] font-mono border border-white/10 hover:bg-white/5 text-slate-300 rounded cursor-pointer"
-                title="Step Backward"
-              >
-                ◀◀
-              </button>
-
-              <button
-                onClick={() => setIsPlaybackPlaying((p) => !p)}
-                className="p-1 px-3 text-[9px] font-mono font-bold uppercase border border-amber-500/20 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded cursor-pointer"
-              >
-                {isPlaybackPlaying ? 'PAUSE' : 'PLAY'}
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsPlaybackPlaying(false);
-                  setPlaybackIndex((prev) => Math.min(recordedSamples.length - 1, prev + 1));
-                }}
-                className="p-1 px-2.5 text-[8.5px] font-mono border border-white/10 hover:bg-white/5 text-slate-300 rounded cursor-pointer"
-                title="Step Forward"
-              >
-                ▶▶
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsPlaybackActive(false);
-                  setIsPlaybackPlaying(false);
-                }}
-                className="ml-2 p-1 px-3 text-[9px] font-mono font-bold uppercase border border-red-500/40 hover:bg-red-500/15 text-red-400 rounded cursor-pointer"
-              >
-                EXIT
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Black Box Playback Scrubber */}
+      <BlackBoxPlayback
+        isActive={isPlaybackActive}
+        playbackIndex={playbackIndex}
+        totalFrames={recordedSamples.length}
+        isPlaying={isPlaybackPlaying}
+        onIndexChange={(idx) => { setPlaybackIndex(idx); setIsPlaybackPlaying(false); }}
+        onTogglePlay={() => setIsPlaybackPlaying((p) => !p)}
+        onStepBack={() => { setIsPlaybackPlaying(false); setPlaybackIndex((prev) => Math.max(0, prev - 1)); }}
+        onStepForward={() => { setIsPlaybackPlaying(false); setPlaybackIndex((prev) => Math.min(recordedSamples.length - 1, prev + 1)); }}
+        onExit={() => { setIsPlaybackActive(false); setIsPlaybackPlaying(false); }}
+      />
 
       {/* Incident Report Modal */}
-      <AnimatePresence>
-        {showReport && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/75 backdrop-blur-md"
-            onClick={() => setShowReport(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              transition={{ type: 'spring', duration: 0.5 }}
-              className="w-full max-w-lg p-6 rounded-xl border border-white/10 glass-panel shadow-2xl relative flex flex-col max-h-[85vh] animate-none"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                onClick={() => setShowReport(false)}
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-
-              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-white/5 shrink-0">
-                <svg className="w-5 h-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <h3 className="text-sm font-semibold tracking-wider font-mono text-white uppercase">
-                  S.P.H.E.R.E. INCIDENT REPORT
-                </h3>
-              </div>
-
-              <div className="flex-1 overflow-y-auto pr-1 text-left">
-                <pre className="p-4 rounded-lg bg-black/60 border border-white/5 text-[10.5px] font-mono text-slate-300 leading-relaxed whitespace-pre-wrap select-text">
-                  {reportText}
-                </pre>
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-end gap-3 shrink-0">
-                <button
-                  onClick={handleCopyReport}
-                  className="px-4 py-1.5 text-xs font-mono font-bold tracking-wider uppercase border border-cyan-500/20 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded cursor-pointer"
-                >
-                  {copied ? 'Copied!' : 'Copy to Clipboard'}
-                </button>
-                <button
-                  onClick={handleDownloadReport}
-                  className="px-4 py-1.5 text-xs font-mono font-bold tracking-wider uppercase border border-slate-700 hover:border-slate-500 text-slate-200 rounded cursor-pointer"
-                >
-                  Download Report
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+      <IncidentReportModal
+        show={showReport}
+        reportText={reportText}
+        onClose={() => setShowReport(false)}
+        onCopy={handleCopyReport}
+        onDownload={handleDownloadReport}
+        copied={copied}
+      />
+    </motion.div>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { getStreamUrl, sendCommand } from '@/lib/api';
 
 export interface TelemetryPayload {
   timestamp: number;
@@ -101,66 +102,8 @@ export interface TelemetryPayload {
   warningTriggers?: Array<{ type: string; status: string; message: string }>;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: resolve the base API URL for SSE stream and command endpoints
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getBaseUrl(): string {
-  if (typeof window === 'undefined') return 'http://localhost:8080';
-  const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (isLocal) {
-    const port = process.env.NEXT_PUBLIC_WS_PORT || '8080';
-    return `${window.location.protocol}//${window.location.hostname}:${port}`;
-  }
-  return `${window.location.protocol}//${window.location.host}`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Session ID: unique per browser tab so each device runs independently
-// ─────────────────────────────────────────────────────────────────────────────
-
-let _sessionId: string | null = null;
-
-function getSessionId(): string {
-  if (_sessionId) return _sessionId;
-  if (typeof window !== 'undefined') {
-    // Persist per-tab: survives refresh but not new tabs
-    let id = sessionStorage.getItem('sphere_session_id');
-    if (!id) {
-      id = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      sessionStorage.setItem('sphere_session_id', id);
-    }
-    _sessionId = id;
-    return id;
-  }
-  return 'server';
-}
-
-function getStreamUrl(): string {
-  return `${getBaseUrl()}/api/stream/dashboard?session=${getSessionId()}`;
-}
-
-function getCommandUrl(): string {
-  return `${getBaseUrl()}/api/command`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Send command to server via HTTP POST (replaces WebSocket send)
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function sendCommand(body: Record<string, unknown>): Promise<void> {
-  try {
-    await fetch(getCommandUrl(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...body, sessionId: getSessionId() }),
-    });
-  } catch (err) {
-    console.error('[Telemetry] Failed to send command:', err);
-  }
-}
+// API utilities (getBaseUrl, getSessionId, getStreamUrl, getCommandUrl, sendCommand)
+// are imported from @/lib/api
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Hook: SSE-based Dashboard Telemetry (replaces WebSocket)
@@ -190,11 +133,11 @@ export function useTelemetry() {
       if (unmounted) return;
 
       const url = getStreamUrl();
-      console.log(`[Telemetry] Connecting to SSE stream: ${url}`);
+      // Connecting to SSE stream
       eventSource = new EventSource(url);
 
       eventSource.onopen = () => {
-        console.log('[Telemetry] SSE stream connected');
+        // SSE stream connected
         setConnected(true);
       };
 

@@ -53,7 +53,8 @@ export default function Sidebar({
 }: SidebarProps) {
   return (
     <motion.aside
-      className="flex flex-col w-full lg:w-[32%] shrink-0 lg:overflow-hidden border-t lg:border-t-0 glass-panel"
+      data-layout="sidebar"
+      className="flex flex-col w-full lg:w-[32%] shrink-0 lg:overflow-y-auto border-t lg:border-t-0 glass-panel"
       style={{ borderColor: 'var(--border)' }}
       initial={{ opacity: 0, x: 14 }}
       animate={{ opacity: 1, x: 0 }}
@@ -62,8 +63,10 @@ export default function Sidebar({
       {/* Panel Header - Integrated Proceed to 3D twin button as a compact tab */}
       <div className="flex items-center justify-between px-4 py-2 shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.1)' }}>
         <div className="flex items-center gap-2">
-          <span className="text-[9px] font-mono font-semibold tracking-[0.22em] uppercase" style={{ color: C.muted }}>Biometric Matrix</span>
-          <div className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm" style={{ background: 'rgba(0,212,255,0.07)', color: C.cyan, border: '1px solid rgba(0,212,255,0.15)' }}>2D HUD</div>
+          <span className="text-[9px] font-mono font-semibold tracking-[0.22em] uppercase" style={{ color: C.muted }}>
+            {activeTrackKey === 'ASTRONAUT' ? 'EVA Bioscan' : activeTrackKey === 'PILOT' ? 'Cockpit Biometrics' : activeTrackKey === 'SURGEON' ? 'Surgical Monitor' : activeTrackKey === 'TRAIN_PILOT' ? 'Vigilance Matrix' : 'Fleet Biometrics'}
+          </span>
+          <div className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm" style={{ background: `${trackConf.themeColor}12`, color: trackConf.themeColor, border: `1px solid ${trackConf.themeColor}25` }}>2D HUD</div>
         </div>
         
         {/* Sleek Proceed to 3D Link in Header */}
@@ -100,27 +103,27 @@ export default function Sidebar({
         </div>
         <div className="grid grid-cols-4 gap-1 mb-2.5">
           {activeTrackKey === 'ASTRONAUT' && ['Aero Payload', 'Orbit Calc', 'Nav Systems', 'Thruster Align'].map((btn, i) => (
-            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]">
+            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]" title={btn}>
               {i === 0 ? 'PAYLOAD' : i === 1 ? 'ORBIT' : i === 2 ? 'NAV' : 'THRUST'}
             </Btn>
           ))}
           {activeTrackKey === 'PILOT' && ['Flaps Config', 'Landing Gear', 'Avionics', 'Radio Comms'].map((btn, i) => (
-            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]">
+            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]" title={btn}>
               {i === 0 ? 'FLAPS' : i === 1 ? 'GEAR' : i === 2 ? 'AVIONICS' : 'RADIO'}
             </Btn>
           ))}
           {activeTrackKey === 'SURGEON' && ['Scalpel Sync', 'Scope Zoom', 'Hemostat', 'Suture Bot'].map((btn, i) => (
-            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]">
+            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]" title={btn}>
               {i === 0 ? 'SCALPEL' : i === 1 ? 'ZOOM' : i === 2 ? 'HEMO' : 'SUTURE'}
             </Btn>
           ))}
           {activeTrackKey === 'TRAIN_PILOT' && ['Brake Override', 'Track Switch', 'Horn Signal', 'Door Control'].map((btn, i) => (
-            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]">
+            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]" title={btn}>
               {i === 0 ? 'BRAKE' : i === 1 ? 'SWITCH' : i === 2 ? 'HORN' : 'DOOR'}
             </Btn>
           ))}
           {activeTrackKey === 'TRUCKER' && ['Engine Brake', 'Trailer Hitch', 'CB Radio', 'Wiper Fluid'].map((btn, i) => (
-            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]">
+            <Btn key={btn} onClick={() => { executeSubsystem(btn); }} color={trackConf.themeColor} className="px-1 text-[7.5px]" title={btn}>
               {i === 0 ? 'ENG.BRK' : i === 1 ? 'HITCH' : i === 2 ? 'RADIO' : 'WIPER'}
             </Btn>
           ))}

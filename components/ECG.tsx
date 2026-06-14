@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect } from 'react';
+import { TrackKey } from '@/lib/constants';
 
 interface ECGProps {
   crisis: boolean;
@@ -13,6 +14,8 @@ interface ECGProps {
   audioCtx?: any;
   volume?: number;
   onBeat?: () => void;
+  responsive?: boolean;
+  trackKey?: TrackKey;
 }
 
 export default function ECG({
@@ -25,13 +28,18 @@ export default function ECG({
   sound = false,
   audioCtx = null,
   volume = 0.5,
-  onBeat
+  onBeat,
+  responsive = false,
+  trackKey = 'PILOT'
 }: ECGProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
   const xRef = useRef(0);
   const yHistory = useRef<Float32Array | null>(null);
   const phaseRef = useRef<number>(0);
+  const actualWidth = useRef(width);
+  const trackKeyRef = useRef(trackKey);
 
   // Sync frequently updating props to refs to avoid restarting requestAnimationFrame loop
   const crisisRef = useRef(crisis);
@@ -49,6 +57,7 @@ export default function ECG({
   useEffect(() => { audioCtxRef.current = audioCtx; }, [audioCtx]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
   useEffect(() => { onBeatRef.current = onBeat; }, [onBeat]);
+  useEffect(() => { trackKeyRef.current = trackKey; }, [trackKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,13 +66,38 @@ export default function ECG({
     if (!ctx) return;
 
     const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 2) : 2;
-    const W = width;
+    let W = responsive ? (containerRef.current?.clientWidth || width || 420) : width;
+    actualWidth.current = W;
     const H = height;
     canvas.width = W * dpr;
     canvas.height = H * dpr;
-    canvas.style.width = W + 'px';
+    if (!responsive) {
+      canvas.style.width = W + 'px';
+    }
     canvas.style.height = H + 'px';
     ctx.scale(dpr, dpr);
+
+    // Responsive resize handler
+    let resizeObserver: ResizeObserver | null = null;
+    if (responsive && containerRef.current) {
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const newW = Math.round(entry.contentRect.width);
+          if (newW > 0 && Math.abs(newW - actualWidth.current) > 2) {
+            actualWidth.current = newW;
+            W = newW;
+            canvas.width = newW * dpr;
+            canvas.height = H * dpr;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.scale(dpr, dpr);
+            // Reset history buffer on resize
+            yHistory.current = new Float32Array(newW).fill(H / 2);
+            xRef.current = 0;
+          }
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+    }
 
     if (!yHistory.current || yHistory.current.length !== W) {
       yHistory.current = new Float32Array(W).fill(H / 2);
@@ -168,16 +202,49 @@ export default function ECG({
             const tInBeat = (p % 1) * beatDurationMs;
             if (tInBeat <= T_active) {
               const theta = tInBeat / T_active;
-              const rAmp = -48.0 * (1 + (bpm - 75) * 0.002);
-              const tAmp = -9.0;
-              const pAmp = -4.5;
-              const sAmp = 12.0;
+              const tk = trackKeyRef.current;
+              // Per-track waveform morphology
+              let rAmp = -48.0 * (1 + (bpm - 75) * 0.002);
+              let tAmp = -9.0;
+              let pAmp = -4.5;
+              let sAmp = 12.0;
+              let pCenter = 0.20, qCenter = 0.38, rCenter = 0.42, sCenter = 0.46, tCenter = 0.72;
+              let pWidth = 0.04, rWidth = 0.012, tWidth = 0.07;
 
-              offset += gauss(pAmp, 0.20, 0.04, theta); // P
-              offset += gauss(4.0, 0.38, 0.015, theta); // Q
-              offset += gauss(rAmp, 0.42, 0.012, theta); // R
-              offset += gauss(sAmp, 0.46, 0.018, theta); // S
-              offset += gauss(tAmp, 0.72, 0.07, theta); // T
+              if (tk === 'ASTRONAUT') {
+                // Bradycardic + slight ST elevation (microgravity)
+                rAmp *= 0.85;
+                tAmp = -12.0; // Taller T-wave
+                tWidth = 0.09;
+              } else if (tk === 'PILOT') {
+                // Sharper R, elevated under G-force
+                rAmp *= 1.15;
+                rWidth = 0.009;
+                sAmp = 16.0;
+              } else if (tk === 'SURGEON') {
+                // Ultra-clean, precise waveform
+                rAmp *= 0.92;
+                pAmp = -3.0;
+                tAmp = -7.0;
+              } else if (tk === 'TRAIN_PILOT') {
+                // Slight PVC - premature beat every 7th
+                if (beatIndex % 7 === 5) {
+                  rAmp *= 1.8;
+                  rWidth = 0.02;
+                  tAmp = 6.0; // Inverted T
+                }
+              } else if (tk === 'TRUCKER') {
+                // Caffeine effect - flattened T, slight tachycardia
+                tAmp = -4.0;
+                tWidth = 0.1;
+                pAmp = -6.0;
+              }
+
+              offset += gauss(pAmp, pCenter, pWidth, theta); // P
+              offset += gauss(4.0, qCenter, 0.015, theta); // Q
+              offset += gauss(rAmp, rCenter, rWidth, theta); // R
+              offset += gauss(sAmp, sCenter, 0.018, theta); // S
+              offset += gauss(tAmp, tCenter, tWidth, theta); // T
               offset += gauss(-0.8, 0.88, 0.04, theta); // U
             }
           }
@@ -238,16 +305,31 @@ export default function ECG({
           const tInBeat = (p % 1) * beatDurationMs;
           if (tInBeat <= T_active) {
             const theta = tInBeat / T_active;
-            const rAmp = -48.0 * (1 + (bpm - 75) * 0.002);
-            const tAmp = -9.0;
-            const pAmp = -4.5;
-            const sAmp = 12.0;
+            const tk = trackKeyRef.current;
+            let rAmp = -48.0 * (1 + (bpm - 75) * 0.002);
+            let tAmp = -9.0;
+            let pAmp = -4.5;
+            let sAmp = 12.0;
+            let pCenter = 0.20, qCenter = 0.38, rCenter = 0.42, sCenter = 0.46, tCenter = 0.72;
+            let pWidth = 0.04, rWidth = 0.012, tWidth = 0.07;
 
-            offset += gauss(pAmp, 0.20, 0.04, theta); // P
-            offset += gauss(4.0, 0.38, 0.015, theta); // Q
-            offset += gauss(rAmp, 0.42, 0.012, theta); // R
-            offset += gauss(sAmp, 0.46, 0.018, theta); // S
-            offset += gauss(tAmp, 0.72, 0.07, theta); // T
+            if (tk === 'ASTRONAUT') {
+              rAmp *= 0.85; tAmp = -12.0; tWidth = 0.09;
+            } else if (tk === 'PILOT') {
+              rAmp *= 1.15; rWidth = 0.009; sAmp = 16.0;
+            } else if (tk === 'SURGEON') {
+              rAmp *= 0.92; pAmp = -3.0; tAmp = -7.0;
+            } else if (tk === 'TRAIN_PILOT') {
+              if (beatIndex % 7 === 5) { rAmp *= 1.8; rWidth = 0.02; tAmp = 6.0; }
+            } else if (tk === 'TRUCKER') {
+              tAmp = -4.0; tWidth = 0.1; pAmp = -6.0;
+            }
+
+            offset += gauss(pAmp, pCenter, pWidth, theta); // P
+            offset += gauss(4.0, qCenter, 0.015, theta); // Q
+            offset += gauss(rAmp, rCenter, rWidth, theta); // R
+            offset += gauss(sAmp, sCenter, 0.018, theta); // S
+            offset += gauss(tAmp, tCenter, tWidth, theta); // T
             offset += gauss(-0.8, 0.88, 0.04, theta); // U
           }
         }
@@ -510,18 +592,21 @@ export default function ECG({
         cancelAnimationFrame(animRef.current);
       }
     };
-  }, [width, height, glow]);
+  }, [width, height, glow, responsive]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="rounded-sm animate-pulse-slow"
-      style={{
-        display: 'block',
-        background: '#000000',
-        imageRendering: 'pixelated'
-      }}
-      aria-label="Real-time cardiac telemetry ECG waveform"
-    />
+    <div ref={containerRef} style={{ width: responsive ? '100%' : undefined }}>
+      <canvas
+        ref={canvasRef}
+        className="rounded-sm animate-pulse-slow"
+        style={{
+          display: 'block',
+          width: responsive ? '100%' : undefined,
+          background: '#000000',
+          imageRendering: 'pixelated'
+        }}
+        aria-label="Real-time cardiac telemetry ECG waveform"
+      />
+    </div>
   );
 }

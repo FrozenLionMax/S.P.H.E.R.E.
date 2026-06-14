@@ -136,28 +136,42 @@ export const PROFILE_METRICS: Record<TrackKey, ProfileMetricConfig[]> = {
 // Profile Hardware Attachment Schema
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const PROFILE_HARDWARE = {
-  TRAIN_PILOT: [
-    { label: 'IR Eye-Tracking Camera', value: 'SCANNING' },
-    { label: 'Capacitive Throttle', value: 'ENGAGED' }
+// Each sensor has: label, telemetry key to read, unit, thresholds for status
+export interface SensorDef {
+  label: string
+  key: string           // telemetry key or trackData key to read
+  unit: string
+  nominal: [number, number]  // [min, max] for NOMINAL range
+  format?: (v: number) => string
+}
+
+export const PROFILE_SENSORS: Record<TrackKey, SensorDef[]> = {
+  ASTRONAUT: [
+    { label: 'Suit Pressure', key: 'suitPressure', unit: 'psi', nominal: [3.8, 4.6], format: v => v.toFixed(2) },
+    { label: 'Helmet CO₂', key: 'co2Level', unit: 'mmHg', nominal: [0, 5.0], format: v => v.toFixed(1) },
+    { label: 'Suit Temp', key: 'temperature', unit: '°F', nominal: [97.0, 100.0], format: v => v.toFixed(1) },
   ],
   PILOT: [
-    { label: 'Headset Oximeter', value: 'COUPLED' },
-    { label: 'Helmet Accel.', value: 'ACTIVE' }
-  ],
-  ASTRONAUT: [
-    { label: 'Garment Impedance Sensor', value: 'CALIBRATED' },
-    { label: 'Helmet CO₂ Gas Sensor', value: 'NOMINAL' }
+    { label: 'Headset SpO₂', key: 'spO2', unit: '%', nominal: [93, 100] },
+    { label: 'Helmet Accel.', key: 'gForce', unit: 'G', nominal: [0, 5.0], format: v => v.toFixed(1) },
+    { label: 'Cabin Altitude', key: 'cabinAlt', unit: 'ft', nominal: [0, 10000], format: v => Math.round(v).toLocaleString() },
   ],
   SURGEON: [
-    { label: 'Robotic Tool IMU Sensor', value: 'ENGAGED' },
-    { label: 'Wrist EDA Panic Sensor', value: 'CONNECTED' }
+    { label: 'Scalpel IMU', key: 'tremorAmplitude', unit: 'mm', nominal: [0, 0.04], format: v => v.toFixed(3) },
+    { label: 'Wrist EDA', key: 'edaLevel', unit: 'µS', nominal: [0.5, 5.0], format: v => v.toFixed(1) },
+    { label: 'Hand Temp', key: 'temperature', unit: '°F', nominal: [96.0, 99.5], format: v => v.toFixed(1) },
+  ],
+  TRAIN_PILOT: [
+    { label: 'IR Eye Tracker', key: 'perclos', unit: '%', nominal: [0, 12], format: v => v.toFixed(1) },
+    { label: 'Throttle Grip', key: 'gripForce', unit: 'N', nominal: [8, 40], format: v => v.toFixed(0) },
+    { label: 'Vibration Sens.', key: 'vibration', unit: 'mm/s', nominal: [0, 8.0], format: v => v.toFixed(1) },
   ],
   TRUCKER: [
-    { label: 'Smart Seat Fabric Wrap', value: 'ACTIVE' },
-    { label: 'V2V Platoon Mesh Antenna', value: 'MESHED' }
-  ]
-} as const;
+    { label: 'Seat Biometrics', key: 'alertness', unit: '%', nominal: [80, 100], format: v => v.toFixed(0) },
+    { label: 'V2V Mesh Ant.', key: 'meshSignal', unit: 'dBm', nominal: [-65, 0], format: v => v.toFixed(0) },
+    { label: 'Cab Temp', key: 'temperature', unit: '°F', nominal: [65, 80], format: v => v.toFixed(1) },
+  ],
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Health Index Calculation Bounds
